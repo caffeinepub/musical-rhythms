@@ -18,9 +18,10 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImageCropper } from "../components/ImageCropper";
 import { SocialIcon } from "../components/SocialIcon";
+import { useActor } from "../hooks/useActor";
 import type { Album, SocialProfile, Song } from "../types";
 
 const MUSICAL_ICONS = [
@@ -68,20 +69,17 @@ function generateId() {
 interface AdminPageProps {
   songs: Song[];
   albums: Album[];
-  onSongsChange: (songs: Song[]) => void;
-  onAlbumsChange: (albums: Album[]) => void;
   socialProfiles: SocialProfile[];
-  onSocialProfilesChange: (profiles: SocialProfile[]) => void;
+  onDataChange: () => Promise<void>;
 }
 
 export function AdminPage({
   songs,
   albums,
-  onSongsChange,
-  onAlbumsChange,
   socialProfiles,
-  onSocialProfilesChange,
+  onDataChange,
 }: AdminPageProps) {
+  const { actor } = useActor();
   const [isLoggedIn, setIsLoggedIn] = useState(
     () => localStorage.getItem("adminLoggedIn") === "true",
   );
@@ -111,9 +109,18 @@ export function AdminPage({
 
   // Live stream URL
   const [liveUrl, setLiveUrl] = useState("");
-  const [savedLiveUrl, setSavedLiveUrl] = useState(
-    () => localStorage.getItem("liveStreamUrl") ?? "",
-  );
+  const [savedLiveUrl, setSavedLiveUrl] = useState("");
+
+  // Load live URL from backend on mount
+  useEffect(() => {
+    if (!actor) return;
+    (actor as any).getLiveUrl().then((url: string) => {
+      if (url) {
+        setSavedLiveUrl(url);
+        setLiveUrl(url);
+      }
+    });
+  }, [actor]);
   const [liveSaved, setLiveSaved] = useState(false);
   const [shareLiveCopied, setShareLiveCopied] = useState(false);
 
@@ -138,8 +145,9 @@ export function AdminPage({
     setIsLoggedIn(false);
   };
 
-  const handleAddSong = () => {
-    if (!songTitle.trim() || !songYoutubeId.trim() || !songAlbumId) return;
+  const handleAddSong = async () => {
+    if (!songTitle.trim() || !songYoutubeId.trim() || !songAlbumId || !actor)
+      return;
     const videoId = songYoutubeId.includes("watch?v=")
       ? songYoutubeId.split("watch?v=")[1]?.split("&")[0]
       : songYoutubeId.includes("youtu.be/")
@@ -154,17 +162,20 @@ export function AdminPage({
       type: songType,
       addedAt: Date.now(),
     };
-    onSongsChange([...songs, newSong]);
-    const albumName =
+    await (actor as any).addSong({ ...newSong, songType: newSong.type });
+    await onDataChange();
+    const albumNameStr =
       albums.find((a) => a.id === songAlbumId)?.name ?? "Unknown Album";
-    setSongAdded({ title: songTitle.trim(), albumName });
+    setSongAdded({ title: songTitle.trim(), albumName: albumNameStr });
     setSongTitle("");
     setSongYoutubeId("");
     setTimeout(() => setSongAdded(null), 4000);
   };
 
-  const handleDeleteSong = (id: string) => {
-    onSongsChange(songs.filter((s) => s.id !== id));
+  const handleDeleteSong = async (id: string) => {
+    if (!actor) return;
+    await (actor as any).deleteSong(id);
+    await onDataChange();
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,15 +189,16 @@ export function AdminPage({
     e.target.value = "";
   };
 
-  const handleAddAlbum = () => {
-    if (!albumName.trim()) return;
+  const handleAddAlbum = async () => {
+    if (!albumName.trim() || !actor) return;
     const newAlbum: Album = {
       id: generateId(),
       name: albumName.trim(),
       imageUrl: albumImageMode === "upload" ? albumImageDataUrl : "",
       icon: albumImageMode === "icon" ? albumIcon : undefined,
     };
-    onAlbumsChange([...albums, newAlbum]);
+    await (actor as any).addAlbum(newAlbum);
+    await onDataChange();
     setAlbumName("");
     setAlbumImageDataUrl("");
     setAlbumIcon("🎵");
@@ -194,21 +206,23 @@ export function AdminPage({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleDeleteAlbum = (id: string) => {
-    onAlbumsChange(albums.filter((a) => a.id !== id));
+  const handleDeleteAlbum = async (id: string) => {
+    if (!actor) return;
+    await (actor as any).deleteAlbum(id);
+    await onDataChange();
   };
 
-  const handleSetLiveUrl = () => {
+  const handleSetLiveUrl = async () => {
     const url = liveUrl.trim();
     if (!url) return;
-    localStorage.setItem("liveStreamUrl", url);
+    if (actor) await (actor as any).setLiveUrl(url);
     setSavedLiveUrl(url);
     setLiveSaved(true);
     setTimeout(() => setLiveSaved(false), 3000);
   };
 
-  const handleClearLiveUrl = () => {
-    localStorage.removeItem("liveStreamUrl");
+  const handleClearLiveUrl = async () => {
+    if (actor) await (actor as any).clearLiveUrl();
     setSavedLiveUrl("");
     setLiveUrl("");
     setLiveSaved(false);
@@ -234,23 +248,26 @@ export function AdminPage({
     }
   };
 
-  const handleAddSocialProfile = () => {
-    if (!socialName.trim() || !socialUrl.trim()) return;
+  const handleAddSocialProfile = async () => {
+    if (!socialName.trim() || !socialUrl.trim() || !actor) return;
     const newProfile: SocialProfile = {
       id: generateId(),
       name: socialName.trim(),
       icon: socialIcon,
       url: socialUrl.trim(),
     };
-    onSocialProfilesChange([...socialProfiles, newProfile]);
+    await (actor as any).addSocialProfile(newProfile);
+    await onDataChange();
     setSocialName("");
     setSocialUrl("");
     setSocialAdded(true);
     setTimeout(() => setSocialAdded(false), 3000);
   };
 
-  const handleDeleteSocialProfile = (id: string) => {
-    onSocialProfilesChange(socialProfiles.filter((p) => p.id !== id));
+  const handleDeleteSocialProfile = async (id: string) => {
+    if (!actor) return;
+    await (actor as any).deleteSocialProfile(id);
+    await onDataChange();
   };
 
   const panelStyle = {

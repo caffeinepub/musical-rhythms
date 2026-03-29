@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
-import { DEFAULT_ALBUMS, DEFAULT_SONGS, migrateSong } from "./data/songs";
+import { migrateSong } from "./data/songs";
+import { useActor } from "./hooks/useActor";
 import { AboutPage } from "./pages/AboutPage";
 import { AdminPage } from "./pages/AdminPage";
 import { HomePage } from "./pages/HomePage";
@@ -15,45 +16,14 @@ function getHashPage(): string {
   return hash || "/";
 }
 
-function loadSongs(): Song[] {
-  try {
-    const stored = localStorage.getItem("songs");
-    if (stored) return (JSON.parse(stored) as Song[]).map(migrateSong);
-  } catch {
-    // ignore
-  }
-  return DEFAULT_SONGS;
-}
-
-function loadAlbums(): Album[] {
-  try {
-    const stored = localStorage.getItem("albums");
-    if (stored) {
-      return JSON.parse(stored) as Album[];
-    }
-  } catch {
-    // ignore
-  }
-  return DEFAULT_ALBUMS;
-}
-
-function loadSocialProfiles(): SocialProfile[] {
-  try {
-    const stored = localStorage.getItem("socialProfiles");
-    if (stored) return JSON.parse(stored) as SocialProfile[];
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
 export default function App() {
+  const { actor, isFetching } = useActor();
   const [currentPage, setCurrentPage] = useState<string>(getHashPage);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [songs, setSongs] = useState<Song[]>(loadSongs);
-  const [albums, setAlbums] = useState<Album[]>(loadAlbums);
-  const [socialProfiles, setSocialProfiles] =
-    useState<SocialProfile[]>(loadSocialProfiles);
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [socialProfiles, setSocialProfiles] = useState<SocialProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [themeId, setThemeId] = useState<string>(
     () => localStorage.getItem("themeId") ?? "dark-purple",
   );
@@ -71,6 +41,105 @@ export default function App() {
   const [dataSaver, setDataSaver] = useState<boolean>(() => {
     return localStorage.getItem("dataSaver") === "true";
   });
+
+  const refreshData = useCallback(async () => {
+    if (!actor) return;
+    try {
+      const [rawSongs, rawAlbums, rawProfiles] = await Promise.all([
+        (actor as any).getSongs() as Promise<any[]>,
+        (actor as any).getAlbums() as Promise<Album[]>,
+        (actor as any).getSocialProfiles() as Promise<SocialProfile[]>,
+      ]);
+      const mappedSongs: Song[] = rawSongs.map((s: any) =>
+        migrateSong({ ...s, type: s.songType ?? s.type }),
+      );
+      setSongs(mappedSongs);
+      setAlbums(rawAlbums);
+      setSocialProfiles(rawProfiles);
+    } catch (e) {
+      console.error("Failed to refresh data", e);
+    }
+  }, [actor]);
+
+  // Initial load: fetch from backend, migrate from localStorage if needed
+  useEffect(() => {
+    if (!actor || isFetching) return;
+
+    (async () => {
+      try {
+        const [rawSongs, rawAlbums, rawProfiles] = await Promise.all([
+          (actor as any).getSongs() as Promise<any[]>,
+          (actor as any).getAlbums() as Promise<Album[]>,
+          (actor as any).getSocialProfiles() as Promise<SocialProfile[]>,
+        ]);
+
+        // Migration: if backend is empty but localStorage has data, migrate it
+        if (rawSongs.length === 0 && rawAlbums.length === 0) {
+          const localSongs = localStorage.getItem("songs");
+          const localAlbums = localStorage.getItem("albums");
+          const localProfiles = localStorage.getItem("socialProfiles");
+
+          const parsedAlbums: Album[] = localAlbums
+            ? (JSON.parse(localAlbums) as Album[])
+            : [];
+          const parsedSongs: Song[] = localSongs
+            ? (JSON.parse(localSongs) as Song[]).map(migrateSong)
+            : [];
+          const parsedProfiles: SocialProfile[] = localProfiles
+            ? (JSON.parse(localProfiles) as SocialProfile[])
+            : [];
+
+          if (
+            parsedAlbums.length > 0 ||
+            parsedSongs.length > 0 ||
+            parsedProfiles.length > 0
+          ) {
+            // Migrate albums first (songs reference albumIds)
+            await Promise.all(
+              parsedAlbums.map((a) => (actor as any).addAlbum(a)),
+            );
+            await Promise.all(
+              parsedSongs.map((s) =>
+                (actor as any).addSong({ ...s, songType: s.type }),
+              ),
+            );
+            await Promise.all(
+              parsedProfiles.map((p) => (actor as any).addSocialProfile(p)),
+            );
+
+            // Clear localStorage after migration
+            localStorage.removeItem("songs");
+            localStorage.removeItem("albums");
+            localStorage.removeItem("socialProfiles");
+
+            setSongs(parsedSongs);
+            setAlbums(parsedAlbums);
+            setSocialProfiles(parsedProfiles);
+          } else {
+            setSongs([]);
+            setAlbums([]);
+            setSocialProfiles([]);
+          }
+        } else {
+          // Clear any leftover localStorage data
+          localStorage.removeItem("songs");
+          localStorage.removeItem("albums");
+          localStorage.removeItem("socialProfiles");
+
+          const mappedSongs: Song[] = rawSongs.map((s: any) =>
+            migrateSong({ ...s, type: s.songType ?? s.type }),
+          );
+          setSongs(mappedSongs);
+          setAlbums(rawAlbums);
+          setSocialProfiles(rawProfiles);
+        }
+      } catch (e) {
+        console.error("Failed to load data from backend", e);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [actor, isFetching]);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -113,18 +182,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("songs", JSON.stringify(songs));
-  }, [songs]);
-
-  useEffect(() => {
-    localStorage.setItem("albums", JSON.stringify(albums));
-  }, [albums]);
-
-  useEffect(() => {
-    localStorage.setItem("socialProfiles", JSON.stringify(socialProfiles));
-  }, [socialProfiles]);
-
-  useEffect(() => {
     localStorage.setItem("dataSaver", String(dataSaver));
   }, [dataSaver]);
 
@@ -143,6 +200,28 @@ export default function App() {
   );
 
   const renderPage = () => {
+    if (isLoading) {
+      return (
+        <div
+          className="flex items-center justify-center flex-1 py-20"
+          data-ocid="app.loading_state"
+        >
+          <div className="flex flex-col items-center gap-4">
+            <div
+              className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
+              style={{
+                borderColor: "var(--accent-color)",
+                borderTopColor: "transparent",
+              }}
+            />
+            <p className="text-sm text-muted-foreground">
+              Loading Musical Rhythms…
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     switch (currentPage) {
       case "/songs":
         return (
@@ -155,10 +234,8 @@ export default function App() {
           <AdminPage
             songs={songs}
             albums={albums}
-            onSongsChange={setSongs}
-            onAlbumsChange={setAlbums}
             socialProfiles={socialProfiles}
-            onSocialProfilesChange={setSocialProfiles}
+            onDataChange={refreshData}
           />
         );
       case "/about":

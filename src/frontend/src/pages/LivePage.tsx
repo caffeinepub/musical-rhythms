@@ -1,20 +1,28 @@
 import { Button } from "@/components/ui/button";
 import { Play, Share2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useActor } from "../hooks/useActor";
 
 interface LivePageProps {
   dataSaver?: boolean;
 }
 
 export function LivePage({ dataSaver }: LivePageProps) {
+  const { actor } = useActor();
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [joined, setJoined] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const url = localStorage.getItem("liveStreamUrl") ?? "";
-    setLiveUrl(url);
-  }, []);
+    if (!actor) return;
+    const fetchLiveUrl = async () => {
+      const url = await (actor as any).getLiveUrl();
+      setLiveUrl(url ?? "");
+    };
+    fetchLiveUrl();
+    const interval = setInterval(fetchLiveUrl, 10000);
+    return () => clearInterval(interval);
+  }, [actor]);
 
   // Convert YouTube watch URL to embed URL
   const getEmbedUrl = (url: string): string => {

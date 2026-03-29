@@ -1,6 +1,7 @@
 import { Music2, Radio, Settings, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SocialIcon } from "../components/SocialIcon";
+import { useActor } from "../hooks/useActor";
 import type { SocialProfile, Song } from "../types";
 
 interface HomePageProps {
@@ -10,19 +11,21 @@ interface HomePageProps {
 }
 
 export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
+  const { actor } = useActor();
   const [isLive, setIsLive] = useState(false);
   const [newSong, setNewSong] = useState<Song | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const checkLive = () => {
-      const url = localStorage.getItem("liveStreamUrl") ?? "";
+    if (!actor) return;
+    const checkLive = async () => {
+      const url = await (actor as any).getLiveUrl();
       setIsLive(Boolean(url));
     };
     checkLive();
-    const interval = setInterval(checkLive, 10000);
+    const interval = setInterval(checkLive, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [actor]);
 
   useEffect(() => {
     const lastVisit = Number(localStorage.getItem("lastVisitTime") ?? 0);
