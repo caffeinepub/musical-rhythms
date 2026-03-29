@@ -8,7 +8,8 @@
 
 import { Actor, HttpAgent, type HttpAgentOptions, type ActorConfig, type Agent, type ActorSubclass } from "@icp-sdk/core/agent";
 import type { Principal } from "@icp-sdk/core/principal";
-import { idlFactory, type _SERVICE } from "./declarations/backend.did";
+import { idlFactory, type _SERVICE, type Song, type Album, type SocialProfile } from "./declarations/backend.did";
+export type { Song, Album, SocialProfile } from "./declarations/backend.did";
 export interface Some<T> {
     __kind__: "Some";
     value: T;
@@ -91,10 +92,36 @@ export class ExternalBlob {
 }
 export interface backendInterface {
     _initializeAccessControlWithSecret(secret: string): Promise<void>;
+    getSongs(): Promise<Song[]>;
+    addSong(song: Song): Promise<void>;
+    deleteSong(id: string): Promise<void>;
+    getAlbums(): Promise<Album[]>;
+    addAlbum(album: Album): Promise<void>;
+    deleteAlbum(id: string): Promise<void>;
+    getSocialProfiles(): Promise<SocialProfile[]>;
+    addSocialProfile(profile: SocialProfile): Promise<void>;
+    updateSocialProfile(profile: SocialProfile): Promise<void>;
+    deleteSocialProfile(id: string): Promise<void>;
+    getLiveUrl(): Promise<string>;
+    setLiveUrl(url: string): Promise<void>;
+    clearLiveUrl(): Promise<void>;
 }
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(_secret: string): Promise<void> {}
+    async getSongs(): Promise<Song[]> { return this.actor.getSongs(); }
+    async addSong(song: Song): Promise<void> { return this.actor.addSong(song); }
+    async deleteSong(id: string): Promise<void> { return this.actor.deleteSong(id); }
+    async getAlbums(): Promise<Album[]> { return this.actor.getAlbums(); }
+    async addAlbum(album: Album): Promise<void> { return this.actor.addAlbum(album); }
+    async deleteAlbum(id: string): Promise<void> { return this.actor.deleteAlbum(id); }
+    async getSocialProfiles(): Promise<SocialProfile[]> { return this.actor.getSocialProfiles(); }
+    async addSocialProfile(profile: SocialProfile): Promise<void> { return this.actor.addSocialProfile(profile); }
+    async updateSocialProfile(profile: SocialProfile): Promise<void> { return this.actor.updateSocialProfile(profile); }
+    async deleteSocialProfile(id: string): Promise<void> { return this.actor.deleteSocialProfile(id); }
+    async getLiveUrl(): Promise<string> { return this.actor.getLiveUrl(); }
+    async setLiveUrl(url: string): Promise<void> { return this.actor.setLiveUrl(url); }
+    async clearLiveUrl(): Promise<void> { return this.actor.clearLiveUrl(); }
 }
 export interface CreateActorOptions {
     agent?: Agent;
