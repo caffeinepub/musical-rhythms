@@ -10,7 +10,45 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
-export interface _SERVICE {}
+export interface Song {
+  id: string;
+  title: string;
+  youtubeUrl: string;
+  thumbnail: string;
+  albumId: string;
+  songType: string;
+  addedAt: bigint;
+}
+
+export interface Album {
+  id: string;
+  name: string;
+  imageUrl: string;
+  icon: string;
+}
+
+export interface SocialProfile {
+  id: string;
+  name: string;
+  icon: string;
+  url: string;
+}
+
+export interface _SERVICE {
+  getSongs: ActorMethod<[], Song[]>;
+  addSong: ActorMethod<[Song], void>;
+  deleteSong: ActorMethod<[string], void>;
+  getAlbums: ActorMethod<[], Album[]>;
+  addAlbum: ActorMethod<[Album], void>;
+  deleteAlbum: ActorMethod<[string], void>;
+  getSocialProfiles: ActorMethod<[], SocialProfile[]>;
+  addSocialProfile: ActorMethod<[SocialProfile], void>;
+  updateSocialProfile: ActorMethod<[SocialProfile], void>;
+  deleteSocialProfile: ActorMethod<[string], void>;
+  getLiveUrl: ActorMethod<[], string>;
+  setLiveUrl: ActorMethod<[string], void>;
+  clearLiveUrl: ActorMethod<[], void>;
+}
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];
 export declare const idlFactory: IDL.InterfaceFactory;
