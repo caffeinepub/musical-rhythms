@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Play, X } from "lucide-react";
+import { Play, Share2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface LivePageProps {
@@ -9,6 +9,7 @@ interface LivePageProps {
 export function LivePage({ dataSaver }: LivePageProps) {
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [joined, setJoined] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const url = localStorage.getItem("liveStreamUrl") ?? "";
@@ -37,6 +38,26 @@ export function LivePage({ dataSaver }: LivePageProps) {
 
   const embedUrl = getEmbedUrl(liveUrl);
   const isLive = Boolean(liveUrl);
+
+  const handleShareLive = () => {
+    const shareLink = `${window.location.origin}${window.location.pathname}#/live`;
+    if (navigator.share) {
+      navigator
+        .share({
+          title: "Soham is Live! 🔴",
+          text: "Join Soham Jagtap's live session on Musical Rhythms!",
+          url: shareLink,
+        })
+        .catch(() => {
+          /* user dismissed */
+        });
+    } else {
+      navigator.clipboard.writeText(shareLink).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 3000);
+      });
+    }
+  };
 
   return (
     <div className="px-4 sm:px-6 py-6 animate-fade-in">
@@ -156,6 +177,28 @@ export function LivePage({ dataSaver }: LivePageProps) {
           </div>
         )}
       </div>
+
+      {/* Share Live button — only shown when live is active */}
+      {isLive && (
+        <div className="mt-5 flex justify-center">
+          <Button
+            onClick={handleShareLive}
+            variant="outline"
+            className="gap-2 px-6"
+            style={{
+              border: "1px solid oklch(0.63 0.22 25 / 0.4)",
+              color: copied ? "oklch(0.72 0.18 145)" : "oklch(0.75 0.18 25)",
+              background: copied
+                ? "oklch(0.52 0.20 145 / 0.10)"
+                : "oklch(0.63 0.22 25 / 0.08)",
+            }}
+            data-ocid="live.share_button"
+          >
+            <Share2 size={14} />
+            {copied ? "Link Copied! ✓" : "Share Live"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

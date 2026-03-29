@@ -115,6 +115,7 @@ export function AdminPage({
     () => localStorage.getItem("liveStreamUrl") ?? "",
   );
   const [liveSaved, setLiveSaved] = useState(false);
+  const [shareLiveCopied, setShareLiveCopied] = useState(false);
 
   // Social media profiles
   const [socialIcon, setSocialIcon] = useState("YouTube");
@@ -211,6 +212,26 @@ export function AdminPage({
     setSavedLiveUrl("");
     setLiveUrl("");
     setLiveSaved(false);
+  };
+
+  const handleShareLive = () => {
+    const shareLink = `${window.location.origin}${window.location.pathname}#/live`;
+    if (navigator.share) {
+      navigator
+        .share({
+          title: "Soham is Live! 🔴",
+          text: "Join Soham Jagtap's live session on Musical Rhythms!",
+          url: shareLink,
+        })
+        .catch(() => {
+          /* user dismissed */
+        });
+    } else {
+      navigator.clipboard.writeText(shareLink).then(() => {
+        setShareLiveCopied(true);
+        setTimeout(() => setShareLiveCopied(false), 3000);
+      });
+    }
   };
 
   const handleAddSocialProfile = () => {
@@ -419,6 +440,26 @@ export function AdminPage({
               <CheckCircle2 size={12} />
               Live stream is active — visible on the Live page
             </p>
+          )}
+          {savedLiveUrl && (
+            <Button
+              onClick={handleShareLive}
+              variant="outline"
+              className="gap-2 mt-1"
+              style={{
+                border: "1px solid oklch(0.63 0.22 25 / 0.4)",
+                color: shareLiveCopied
+                  ? "oklch(0.72 0.18 145)"
+                  : "oklch(0.75 0.18 25)",
+                background: shareLiveCopied
+                  ? "oklch(0.52 0.20 145 / 0.10)"
+                  : "oklch(0.63 0.22 25 / 0.08)",
+              }}
+              data-ocid="admin.share_live.button"
+            >
+              <Share2 size={14} />
+              {shareLiveCopied ? "Link Copied! ✓" : "Share Live"}
+            </Button>
           )}
         </div>
       </div>
