@@ -16,8 +16,9 @@ export function LivePage({ dataSaver }: LivePageProps) {
   useEffect(() => {
     if (!actor) return;
     const fetchLiveUrl = async () => {
-      const url = await (actor as any).getLiveUrl();
-      setLiveUrl(url ?? "");
+      const result = await (actor as any).getLiveUrl();
+      const url = Array.isArray(result) ? (result[0] ?? "") : (result ?? "");
+      setLiveUrl(url);
     };
     fetchLiveUrl();
     const interval = setInterval(fetchLiveUrl, 10000);

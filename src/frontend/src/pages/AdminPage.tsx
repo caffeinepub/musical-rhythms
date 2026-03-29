@@ -91,7 +91,7 @@ export function AdminPage({
   const [songTitle, setSongTitle] = useState("");
   const [songYoutubeId, setSongYoutubeId] = useState("");
   const [songType, setSongType] = useState<"Video" | "Audio">("Video");
-  const [songAlbumId, setSongAlbumId] = useState<string>("");
+  const [songAlbumId, setSongAlbumId] = useState<string>("no-album");
   const [songAdded, setSongAdded] = useState<{
     title: string;
     albumName: string;
@@ -114,12 +114,16 @@ export function AdminPage({
   // Load live URL from backend on mount
   useEffect(() => {
     if (!actor) return;
-    (actor as any).getLiveUrl().then((url: string) => {
-      if (url) {
-        setSavedLiveUrl(url);
-        setLiveUrl(url);
-      }
-    });
+    (actor as any)
+      .getLiveUrl()
+      .then((result: string | string[]) => {
+        const url = Array.isArray(result) ? (result[0] ?? "") : (result ?? "");
+        if (url) {
+          setSavedLiveUrl(url);
+          setLiveUrl(url);
+        }
+      })
+      .catch(() => {});
   }, [actor]);
   const [liveSaved, setLiveSaved] = useState(false);
   const [shareLiveCopied, setShareLiveCopied] = useState(false);
@@ -146,7 +150,13 @@ export function AdminPage({
   };
 
   const handleAddSong = async () => {
-    if (!songTitle.trim() || !songYoutubeId.trim() || !songAlbumId || !actor)
+    if (
+      !songTitle.trim() ||
+      !songYoutubeId.trim() ||
+      !songAlbumId ||
+      songAlbumId === "no-album" ||
+      !actor
+    )
       return;
     const videoId = songYoutubeId.includes("watch?v=")
       ? songYoutubeId.split("watch?v=")[1]?.split("&")[0]
@@ -278,7 +288,13 @@ export function AdminPage({
 
   if (!isLoggedIn) {
     return (
-      <div className="flex items-center justify-center min-h-full px-4 py-12 animate-fade-in">
+      <div
+        className="flex items-center justify-center px-4 py-16 animate-fade-in"
+        style={{
+          minHeight: "calc(100vh - 8rem)",
+          background: "oklch(var(--background))",
+        }}
+      >
         <div
           className="w-full max-w-sm rounded-2xl p-8"
           style={panelStyle}
@@ -352,7 +368,13 @@ export function AdminPage({
   }
 
   return (
-    <div className="px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
+    <div
+      className="px-4 sm:px-6 py-6 space-y-6 animate-fade-in"
+      style={{
+        minHeight: "calc(100vh - 8rem)",
+        background: "oklch(var(--background))",
+      }}
+    >
       {/* Image cropper overlay */}
       {cropSrc && (
         <ImageCropper
@@ -707,6 +729,9 @@ export function AdminPage({
                   <SelectValue placeholder="Select album" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="no-album" disabled>
+                    Select an album
+                  </SelectItem>
                   {albums.map((album) => (
                     <SelectItem key={album.id} value={album.id}>
                       {album.icon && !album.imageUrl ? `${album.icon} ` : ""}

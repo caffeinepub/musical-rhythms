@@ -75,7 +75,7 @@ export function SettingsPage({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6">
+    <div className="px-4 py-6 pb-10">
       <div className="max-w-md mx-auto space-y-4">
         {/* 1. Audio Settings */}
         <div className="rounded-2xl p-5" style={panelStyle}>

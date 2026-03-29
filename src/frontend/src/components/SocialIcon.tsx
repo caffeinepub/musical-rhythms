@@ -1,3 +1,4 @@
+import type React from "react";
 interface SocialIconProps {
   platform: string;
   size?: number;
@@ -29,6 +30,7 @@ function Svg({
 }
 
 export function SocialIcon({ platform, size = 24 }: SocialIconProps) {
+  if (!platform) return null;
   const p = platform.toLowerCase().trim();
 
   if (p === "youtube") {

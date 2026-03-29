@@ -1,3 +1,4 @@
+import React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
@@ -14,6 +15,61 @@ import type { Album, SocialProfile, Song } from "./types";
 function getHashPage(): string {
   const hash = window.location.hash.replace("#", "");
   return hash || "/";
+}
+
+class AdminErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error: error.message };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            padding: "2rem",
+            color: "white",
+            textAlign: "center",
+            minHeight: "calc(100vh - 8rem)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "oklch(var(--background))",
+          }}
+        >
+          <h2>Admin page failed to load</h2>
+          <p
+            style={{ opacity: 0.7, fontSize: "0.875rem", marginTop: "0.5rem" }}
+          >
+            {this.state.error}
+          </p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, error: "" })}
+            style={{
+              marginTop: "1rem",
+              padding: "0.5rem 1rem",
+              background: "#9b6ef3",
+              border: "none",
+              borderRadius: "0.5rem",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -231,12 +287,14 @@ export default function App() {
         return <LivePage dataSaver={dataSaver} />;
       case "/admin":
         return (
-          <AdminPage
-            songs={songs}
-            albums={albums}
-            socialProfiles={socialProfiles}
-            onDataChange={refreshData}
-          />
+          <AdminErrorBoundary>
+            <AdminPage
+              songs={songs}
+              albums={albums}
+              socialProfiles={socialProfiles}
+              onDataChange={refreshData}
+            />
+          </AdminErrorBoundary>
         );
       case "/about":
         return <AboutPage onNavigate={navigate} />;
