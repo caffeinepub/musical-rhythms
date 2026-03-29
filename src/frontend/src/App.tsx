@@ -68,6 +68,9 @@ export default function App() {
       return null;
     }
   });
+  const [dataSaver, setDataSaver] = useState<boolean>(() => {
+    return localStorage.getItem("dataSaver") === "true";
+  });
 
   useEffect(() => {
     const html = document.documentElement;
@@ -121,6 +124,10 @@ export default function App() {
     localStorage.setItem("socialProfiles", JSON.stringify(socialProfiles));
   }, [socialProfiles]);
 
+  useEffect(() => {
+    localStorage.setItem("dataSaver", String(dataSaver));
+  }, [dataSaver]);
+
   const navigate = useCallback((page: string) => {
     window.location.hash = page === "/" ? "" : page;
     setCurrentPage(page);
@@ -138,9 +145,11 @@ export default function App() {
   const renderPage = () => {
     switch (currentPage) {
       case "/songs":
-        return <SongsPage songs={songs} albums={albums} />;
+        return (
+          <SongsPage songs={songs} albums={albums} dataSaver={dataSaver} />
+        );
       case "/live":
-        return <LivePage />;
+        return <LivePage dataSaver={dataSaver} />;
       case "/admin":
         return (
           <AdminPage
@@ -161,6 +170,8 @@ export default function App() {
             themeId={themeId}
             customTheme={customTheme}
             onThemeChange={handleThemeChange}
+            dataSaver={dataSaver}
+            onDataSaverChange={setDataSaver}
           />
         );
       default:

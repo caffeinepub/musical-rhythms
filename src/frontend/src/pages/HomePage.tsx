@@ -1,4 +1,4 @@
-import { Music2, Radio, User } from "lucide-react";
+import { Music2, Radio, Settings, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SocialIcon } from "../components/SocialIcon";
 import type { SocialProfile, Song } from "../types";
@@ -25,21 +25,16 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
   }, []);
 
   useEffect(() => {
-    // Find new songs added after the user's last visit
     const lastVisit = Number(localStorage.getItem("lastVisitTime") ?? 0);
-
-    // Update last visit time immediately so subsequent refreshes won't show old notifications
     localStorage.setItem("lastVisitTime", String(Date.now()));
 
     if (songs.length > 0 && lastVisit > 0) {
-      // Find the most recently added song that is newer than last visit
       const newSongs = songs
         .filter((s) => s.addedAt && s.addedAt > lastVisit)
         .sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
 
       if (newSongs.length > 0) {
         setNewSong(newSongs[0]);
-        // Auto-dismiss after 7 minutes
         dismissTimer.current = setTimeout(
           () => setNewSong(null),
           7 * 60 * 1000,
@@ -53,13 +48,11 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
   }, [songs]);
 
   const handleNewSongTap = (song: Song) => {
-    // Store song ID so SongsPage can auto-open it
     localStorage.setItem("openSongId", song.id);
     setNewSong(null);
     onNavigate("/songs");
   };
 
-  // Live notification takes priority over new song notification
   const showLive = isLive;
   const showNewSong = !isLive && Boolean(newSong);
 
@@ -82,7 +75,7 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
         Music by Soham Jagtap
       </p>
 
-      {/* Live notification banner — only shown when live */}
+      {/* Live notification banner */}
       {showLive && (
         <button
           type="button"
@@ -152,9 +145,10 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
         </button>
       )}
 
-      {/* Menu cards */}
-      <div className="w-full max-w-md flex flex-col gap-4">
+      {/* 2×2 Menu grid */}
+      <div className="w-full max-w-md">
         <div className="grid grid-cols-2 gap-4">
+          {/* Songs */}
           <button
             type="button"
             onClick={() => onNavigate("/songs")}
@@ -175,6 +169,7 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
             <span className="text-sm font-semibold text-foreground">Songs</span>
           </button>
 
+          {/* Live */}
           <button
             type="button"
             onClick={() => onNavigate("/live")}
@@ -194,34 +189,57 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
             </div>
             <span className="text-sm font-semibold text-foreground">Live</span>
           </button>
-        </div>
 
-        {/* About Creator card */}
-        <button
-          type="button"
-          onClick={() => onNavigate("/about")}
-          data-ocid="home.about.button"
-          className="group flex flex-col items-center justify-center gap-3 p-6 rounded-2xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-          style={{
-            background: "oklch(var(--card))",
-            border: "1px solid oklch(var(--border))",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-          }}
-        >
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
-            style={{ background: "oklch(var(--primary) / 0.15)" }}
+          {/* About Creator */}
+          <button
+            type="button"
+            onClick={() => onNavigate("/about")}
+            data-ocid="home.about.button"
+            className="group flex flex-col items-center justify-center gap-3 p-6 rounded-2xl transition-all duration-200 hover:scale-[1.03] active:scale-[0.98]"
+            style={{
+              background: "oklch(var(--card))",
+              border: "1px solid oklch(var(--border))",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+            }}
           >
-            <User size={28} style={{ color: "var(--accent-color)" }} />
-          </div>
-          <span className="text-sm font-semibold text-foreground">
-            About Creator
-          </span>
-        </button>
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
+              style={{ background: "oklch(var(--primary) / 0.15)" }}
+            >
+              <User size={28} style={{ color: "var(--accent-color)" }} />
+            </div>
+            <span className="text-sm font-semibold text-foreground">
+              About Creator
+            </span>
+          </button>
+
+          {/* Settings */}
+          <button
+            type="button"
+            onClick={() => onNavigate("/settings")}
+            data-ocid="home.settings.button"
+            className="group flex flex-col items-center justify-center gap-3 p-6 rounded-2xl transition-all duration-200 hover:scale-[1.03] active:scale-[0.98]"
+            style={{
+              background: "oklch(var(--card))",
+              border: "1px solid oklch(var(--border))",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+            }}
+          >
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
+              style={{ background: "oklch(var(--primary) / 0.15)" }}
+            >
+              <Settings size={28} style={{ color: "var(--accent-color)" }} />
+            </div>
+            <span className="text-sm font-semibold text-foreground">
+              Settings
+            </span>
+          </button>
+        </div>
 
         {/* Social Media Profiles */}
         {socialProfiles.length > 0 && (
-          <div className="mt-2">
+          <div className="mt-6">
             <p
               className="text-xs font-semibold uppercase tracking-widest text-center mb-3"
               style={{ color: "var(--accent-color)" }}

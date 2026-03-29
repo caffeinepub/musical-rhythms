@@ -1,4 +1,13 @@
-import { Check, ChevronRight, Lock, Moon, Sun } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronRight,
+  Lock,
+  Moon,
+  Sun,
+  Volume2,
+  Wifi,
+} from "lucide-react";
 import { useState } from "react";
 
 interface SettingsPageProps {
@@ -6,6 +15,8 @@ interface SettingsPageProps {
   themeId: string;
   customTheme: { bg: string; accent: string } | null;
   onThemeChange: (id: string, custom?: { bg: string; accent: string }) => void;
+  dataSaver: boolean;
+  onDataSaverChange: (value: boolean) => void;
 }
 
 const DARK_PRESETS = [
@@ -34,6 +45,8 @@ export function SettingsPage({
   themeId,
   customTheme,
   onThemeChange,
+  dataSaver,
+  onDataSaverChange,
 }: SettingsPageProps) {
   const isLightMode = themeId.startsWith("light-");
   const activePresets = isLightMode ? LIGHT_PRESETS : DARK_PRESETS;
@@ -42,6 +55,11 @@ export function SettingsPage({
   const [customAccent, setCustomAccent] = useState(
     customTheme?.accent ?? "#9b6ef3",
   );
+
+  const [volume, setVolume] = useState(80);
+
+  const isHighVolume = volume > 80;
+  const sliderColor = isHighVolume ? "#ef4444" : "var(--accent-color)";
 
   const handleModeSelect = (mode: "dark" | "light") => {
     if (mode === "dark" && isLightMode) {
@@ -59,7 +77,141 @@ export function SettingsPage({
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6">
       <div className="max-w-md mx-auto space-y-4">
-        {/* Appearance card */}
+        {/* 1. Audio Settings */}
+        <div className="rounded-2xl p-5" style={panelStyle}>
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
+            Audio Settings
+          </h2>
+          <div className="flex items-center gap-3 mb-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{
+                background: isHighVolume
+                  ? "rgba(239,68,68,0.15)"
+                  : "oklch(var(--primary) / 0.12)",
+              }}
+            >
+              <Volume2
+                size={16}
+                style={{
+                  color: isHighVolume ? "#ef4444" : "var(--accent-color)",
+                }}
+              />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground mb-0.5">
+                Default Volume Level
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Set the default audio volume for songs
+              </p>
+            </div>
+            <span
+              className="text-sm font-semibold min-w-[36px] text-right"
+              style={{
+                color: isHighVolume ? "#ef4444" : "var(--accent-color)",
+              }}
+            >
+              {volume}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            className="w-full h-2 rounded-full appearance-none cursor-pointer"
+            style={{
+              accentColor: sliderColor,
+              background: `linear-gradient(to right, ${sliderColor} ${volume}%, oklch(var(--muted)) ${volume}%)`,
+            }}
+            data-ocid="settings.volume.input"
+          />
+          <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+            <span>0%</span>
+            <span>100%</span>
+          </div>
+          {isHighVolume && (
+            <div
+              className="mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5"
+              style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.3)",
+              }}
+            >
+              <AlertTriangle
+                size={15}
+                className="flex-shrink-0 mt-0.5"
+                style={{ color: "#ef4444" }}
+              />
+              <p
+                className="text-xs leading-relaxed"
+                style={{ color: "#ef4444" }}
+              >
+                ⚠️ High volume warning! Listening above 80% for extended periods
+                can damage your hearing. Keep it safe for your ears.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* 2. Data Saver */}
+        <div className="rounded-2xl p-5" style={panelStyle}>
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
+            Data Saver
+          </h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "oklch(var(--primary) / 0.12)" }}
+              >
+                <Wifi size={16} style={{ color: "var(--accent-color)" }} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  Reduce Data Usage
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Lower video quality to save data
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onDataSaverChange(!dataSaver)}
+              className="relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0"
+              style={{
+                background: dataSaver
+                  ? "var(--accent-color)"
+                  : "oklch(var(--muted))",
+              }}
+              data-ocid="settings.data_saver.toggle"
+              aria-pressed={dataSaver}
+            >
+              <span
+                className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                style={{
+                  transform: dataSaver ? "translateX(24px)" : "translateX(0)",
+                }}
+              />
+            </button>
+          </div>
+          {dataSaver && (
+            <p
+              className="mt-3 text-xs px-3 py-2 rounded-lg"
+              style={{
+                background: "oklch(var(--primary) / 0.08)",
+                color: "var(--accent-color)",
+              }}
+            >
+              Data Saver is ON — videos will stream at slightly lower quality.
+            </p>
+          )}
+        </div>
+
+        {/* 3. Appearance */}
         <div className="rounded-2xl p-5" style={panelStyle}>
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
             Appearance
@@ -220,7 +372,7 @@ export function SettingsPage({
           </div>
         </div>
 
-        {/* Admin section */}
+        {/* 4. Administration */}
         <div className="rounded-2xl p-5" style={panelStyle}>
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
             Administration

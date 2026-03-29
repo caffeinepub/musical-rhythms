@@ -4,9 +4,13 @@ import type { Song } from "../types";
 interface VideoPlayerProps {
   song: Song;
   onClose: () => void;
+  dataSaver?: boolean;
 }
 
-export function VideoPlayer({ song, onClose }: VideoPlayerProps) {
+export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
+  const qualityParam = dataSaver ? "&vq=large" : "";
+  const src = `https://www.youtube.com/embed/${song.youtubeUrl}?autoplay=1&rel=0${qualityParam}`;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-8"
@@ -52,7 +56,7 @@ export function VideoPlayer({ song, onClose }: VideoPlayerProps) {
         {/* Iframe */}
         <div className="relative" style={{ paddingBottom: "56.25%" }}>
           <iframe
-            src={`https://www.youtube.com/embed/${song.youtubeUrl}?autoplay=1&rel=0`}
+            src={src}
             title={song.title}
             className="absolute inset-0 w-full h-full"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

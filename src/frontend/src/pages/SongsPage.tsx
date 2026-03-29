@@ -7,9 +7,10 @@ import type { Album, Song } from "../types";
 interface SongsPageProps {
   songs: Song[];
   albums: Album[];
+  dataSaver?: boolean;
 }
 
-export function SongsPage({ songs, albums }: SongsPageProps) {
+export function SongsPage({ songs, albums, dataSaver }: SongsPageProps) {
   const [search, setSearch] = useState("");
   const [activeSong, setActiveSong] = useState<Song | null>(null);
 
@@ -128,7 +129,11 @@ export function SongsPage({ songs, albums }: SongsPageProps) {
       )}
 
       {activeSong && (
-        <VideoPlayer song={activeSong} onClose={() => setActiveSong(null)} />
+        <VideoPlayer
+          song={activeSong}
+          onClose={() => setActiveSong(null)}
+          dataSaver={dataSaver}
+        />
       )}
     </div>
   );

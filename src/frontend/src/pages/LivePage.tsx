@@ -2,7 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Play, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export function LivePage() {
+interface LivePageProps {
+  dataSaver?: boolean;
+}
+
+export function LivePage({ dataSaver }: LivePageProps) {
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [joined, setJoined] = useState(false);
 
@@ -14,17 +18,19 @@ export function LivePage() {
   // Convert YouTube watch URL to embed URL
   const getEmbedUrl = (url: string): string => {
     if (!url) return "";
+    const qualityParam = dataSaver ? "&vq=large" : "";
+    const base = `?autoplay=1&rel=0${qualityParam}`;
     const watchMatch = url.match(/[?&]v=([^&]+)/);
     if (watchMatch) {
-      return `https://www.youtube.com/embed/${watchMatch[1]}?autoplay=1&rel=0`;
+      return `https://www.youtube.com/embed/${watchMatch[1]}${base}`;
     }
     const shortMatch = url.match(/youtu\.be\/([^?&]+)/);
     if (shortMatch) {
-      return `https://www.youtube.com/embed/${shortMatch[1]}?autoplay=1&rel=0`;
+      return `https://www.youtube.com/embed/${shortMatch[1]}${base}`;
     }
     const liveMatch = url.match(/youtube\.com\/live\/([^?&]+)/);
     if (liveMatch) {
-      return `https://www.youtube.com/embed/${liveMatch[1]}?autoplay=1&rel=0`;
+      return `https://www.youtube.com/embed/${liveMatch[1]}${base}`;
     }
     return url;
   };
