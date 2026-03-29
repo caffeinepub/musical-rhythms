@@ -1,4 +1,4 @@
-import { Home, Music, Music2, Radio, Settings, User, X } from "lucide-react";
+import { Home, Music, Radio, Settings, User, X } from "lucide-react";
 
 interface SidebarProps {
   currentPage: string;
@@ -52,12 +52,11 @@ export function Sidebar({
       >
         {/* Logo area */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: "oklch(var(--primary) / 0.18)" }}
-          >
-            <Music2 size={20} style={{ color: "var(--accent-color)" }} />
-          </div>
+          <img
+            src="/assets/uploads/unnamed-019d39d0-d234-7035-b935-2f8115eca61d-1.png"
+            alt="MR Logo"
+            className="w-9 h-9 object-contain"
+          />
           <span className="font-bold text-base text-foreground tracking-tight">
             Musical Rhythms
           </span>
