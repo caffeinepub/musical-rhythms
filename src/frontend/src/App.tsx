@@ -152,11 +152,17 @@ export default function App() {
           ) {
             // Migrate albums first (songs reference albumIds)
             await Promise.all(
-              parsedAlbums.map((a) => (actor as any).addAlbum(a)),
+              parsedAlbums.map((a) =>
+                (actor as any).addAlbum({ ...a, icon: a.icon ?? "" }),
+              ),
             );
             await Promise.all(
               parsedSongs.map((s) =>
-                (actor as any).addSong({ ...s, songType: s.type }),
+                (actor as any).addSong({
+                  ...s,
+                  songType: s.type,
+                  addedAt: BigInt(s.addedAt ?? Date.now()),
+                }),
               ),
             );
             await Promise.all(

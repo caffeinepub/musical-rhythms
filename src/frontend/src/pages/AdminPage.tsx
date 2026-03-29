@@ -172,7 +172,11 @@ export function AdminPage({
       type: songType,
       addedAt: Date.now(),
     };
-    await (actor as any).addSong({ ...newSong, songType: newSong.type });
+    await (actor as any).addSong({
+      ...newSong,
+      songType: newSong.type,
+      addedAt: BigInt(newSong.addedAt ?? Date.now()),
+    });
     await onDataChange();
     const albumNameStr =
       albums.find((a) => a.id === songAlbumId)?.name ?? "Unknown Album";
@@ -205,7 +209,7 @@ export function AdminPage({
       id: generateId(),
       name: albumName.trim(),
       imageUrl: albumImageMode === "upload" ? albumImageDataUrl : "",
-      icon: albumImageMode === "icon" ? albumIcon : undefined,
+      icon: albumImageMode === "icon" ? albumIcon : "",
     };
     await (actor as any).addAlbum(newAlbum);
     await onDataChange();
