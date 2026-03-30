@@ -11,7 +11,48 @@ declare global {
 
 const LOGO_PATH = "/assets/unnamed-019d39d0-d234-7035-b935-2f8115eca61d.png";
 
-// Pre-computed static bar data — no array index keys
+/**
+ * Extracts just the YouTube video ID from any YouTube URL format.
+ * - https://youtu.be/VIDEO_ID?si=... → VIDEO_ID
+ * - https://www.youtube.com/watch?v=VIDEO_ID&... → VIDEO_ID
+ * - https://youtube.com/watch?v=VIDEO_ID → VIDEO_ID
+ * - https://www.youtube.com/embed/VIDEO_ID → VIDEO_ID
+ * - If already just an ID (11-char alphanumeric with dashes/underscores, no dots or slashes)
+ */
+function extractVideoId(url: string): string {
+  if (!url) return url;
+  const trimmed = url.trim();
+
+  // Already a bare ID (11-char alphanumeric with dashes/underscores, no dots or slashes)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
+  try {
+    const parsed = new URL(trimmed);
+
+    // youtu.be short URL: youtu.be/VIDEO_ID
+    if (parsed.hostname === "youtu.be") {
+      return parsed.pathname.replace(/^\//, "").split("/")[0];
+    }
+
+    // youtube.com/watch?v=VIDEO_ID
+    const vParam = parsed.searchParams.get("v");
+    if (vParam) return vParam;
+
+    // youtube.com/embed/VIDEO_ID or youtube.com/v/VIDEO_ID
+    const pathParts = parsed.pathname.split("/").filter(Boolean);
+    if (
+      pathParts.length >= 2 &&
+      (pathParts[0] === "embed" || pathParts[0] === "v")
+    ) {
+      return pathParts[1];
+    }
+  } catch {
+    // Not a valid URL — fall through and return as-is
+  }
+
+  return trimmed;
+}
+
 const WAVE_BARS = [
   { id: "b01", maxH: 22, dur: 0.62, del: -0.3 },
   { id: "b02", maxH: 38, dur: 0.88, del: -0.7 },
@@ -69,12 +110,11 @@ function WaveVisualizer({ isPlaying }: { isPlaying: boolean }) {
           }
         />
       ))}
-      <style>{`
-        @keyframes audioBar {
-          from { height: var(--bar-min, 4px); }
-          to { height: var(--bar-max, 40px); }
+      <style>
+        {
+          "@keyframes audioBar { from { height: var(--bar-min,4px); } to { height: var(--bar-max,40px); } }"
         }
-      `}</style>
+      </style>
     </div>
   );
 }
@@ -86,61 +126,204 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Detect if a URL is a direct audio file (not YouTube) */
+function isDirectAudioUrl(url: string): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase().trim();
+  // Common audio file extensions
+  if (u.match(/\.(mp3|ogg|wav|m4a|aac|flac|opus|webm)(\?.*)?$/)) return true;
+  // Firebase Storage audio URLs
+  if (u.includes("firebasestorage.googleapis.com") && u.includes("alt=media"))
+    return true;
+  // Dropbox direct links
+  if (u.includes("dropbox.com") && u.includes("dl=1")) return true;
+  // Google Drive direct links
+  if (u.includes("drive.google.com") && u.includes("/uc?")) return true;
+  return false;
+}
+
 interface AudioPlayerProps {
   song: Song;
   onClose: () => void;
 }
 
-export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
-  const playerRef = useRef<any>(null);
-  const iframeId = `audio-yt-${song.id}`;
+// ─── HTML5 Audio Player ───────────────────────────────────────────────────────
+function NativeAudioPlayer({ song, onClose }: AudioPlayerProps) {
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onLoaded = () => {
+      setDuration(audio.duration);
+      setIsReady(true);
+    };
+    const onTime = () => setCurrentTime(audio.currentTime);
+    const onEnded = () => setIsPlaying(false);
+    const onErr = () => {
+      setHasError(true);
+      setIsReady(true);
+    };
+    const onCanPlay = () => setIsReady(true);
+    audio.addEventListener("loadedmetadata", onLoaded);
+    audio.addEventListener("canplay", onCanPlay);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onErr);
+    return () => {
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("canplay", onCanPlay);
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onErr);
+    };
+  }, []);
+
+  const handlePlayPause = () => {
+    const audio = audioRef.current;
+    if (!audio || !isReady) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => setHasError(true));
+    }
+  };
+
+  const handleRewind = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = Math.max(0, audio.currentTime - 10);
+  };
+
+  const handleForward = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = Math.min(duration || 999, audio.currentTime + 10);
+  };
+
+  const progress = duration ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <PlayerShell
+      song={song}
+      onClose={onClose}
+      isPlaying={isPlaying}
+      isReady={isReady}
+    >
+      {/* Native audio element */}
+      <audio ref={audioRef} src={song.youtubeUrl} preload="metadata">
+        <track kind="captions" />
+      </audio>
+
+      {hasError && (
+        <p
+          className="text-xs text-center mb-4"
+          style={{ color: "oklch(0.7 0.15 25)" }}
+        >
+          Could not load audio. Check the URL or try a different link.
+        </p>
+      )}
+
+      <PlayerControls
+        isPlaying={isPlaying}
+        isReady={isReady}
+        currentTime={currentTime}
+        duration={duration}
+        progress={progress}
+        onPlayPause={handlePlayPause}
+        onRewind={handleRewind}
+        onForward={handleForward}
+        onSeekChange={(val) => setCurrentTime(val)}
+        onSeekCommit={(val) => {
+          if (audioRef.current) audioRef.current.currentTime = val;
+        }}
+      />
+    </PlayerShell>
+  );
+}
+
+// ─── YouTube IFrame Audio Player ──────────────────────────────────────────────
+function YouTubeAudioPlayer({ song, onClose }: AudioPlayerProps) {
+  const playerRef = useRef<any>(null);
+  const containerId = `yt-audio-${song.id}`;
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isReady, setIsReady] = useState(true);
   const [isSeeking, setIsSeeking] = useState(false);
+  const pendingPlayRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(
     undefined,
   );
+
+  // Extract the bare video ID from whatever URL format the user pasted
+  const videoId = extractVideoId(song.youtubeUrl);
 
   useEffect(() => {
     let destroyed = false;
 
     const initPlayer = () => {
       if (destroyed) return;
-      const container = document.getElementById(iframeId);
-      if (!container) return;
-      playerRef.current = new window.YT.Player(iframeId, {
-        videoId: song.youtubeUrl,
+      // Ensure the container element exists in the DOM before creating the player
+      const container = document.getElementById(containerId);
+      if (!container) {
+        // Retry after a short delay if DOM isn't ready yet
+        setTimeout(() => {
+          if (!destroyed) initPlayer();
+        }, 100);
+        return;
+      }
+      playerRef.current = new window.YT.Player(containerId, {
+        width: "320",
+        height: "180",
+        videoId: videoId,
         playerVars: {
-          autoplay: 1,
+          autoplay: 0,
           controls: 0,
           rel: 0,
           modestbranding: 1,
           iv_load_policy: 3,
           fs: 0,
+          playsinline: 1,
+          origin: window.location.origin,
         },
         events: {
           onReady: (e: any) => {
             if (destroyed) return;
             const dur = e.target.getDuration();
             if (dur) setDuration(dur);
-            e.target.playVideo();
-            setIsPlaying(true);
             setIsReady(true);
+            if (pendingPlayRef.current) {
+              pendingPlayRef.current = false;
+              try {
+                e.target.playVideo();
+              } catch {}
+            }
           },
           onStateChange: (e: any) => {
             if (destroyed) return;
-            if (e.data === 1) {
+            if (e.data === window.YT?.PlayerState?.PLAYING) {
               setIsPlaying(true);
               const dur = e.target.getDuration();
               if (dur) setDuration(dur);
-            } else if (e.data === 0 || e.data === 2) {
+            } else if (
+              e.data === window.YT?.PlayerState?.PAUSED ||
+              e.data === window.YT?.PlayerState?.ENDED
+            ) {
               setIsPlaying(false);
             }
           },
           onError: () => {
-            if (!destroyed) setIsReady(true); // unblock UI even on error
+            if (!destroyed) setIsReady(true);
           },
         },
       });
@@ -150,32 +333,32 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
       if (window.YT?.Player) {
         initPlayer();
       } else {
-        const existingCallback = window.onYouTubeIframeAPIReady;
+        const prev = window.onYouTubeIframeAPIReady;
         window.onYouTubeIframeAPIReady = () => {
-          if (typeof existingCallback === "function") existingCallback();
+          if (typeof prev === "function") prev();
           if (!destroyed) initPlayer();
         };
         if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-          const script = document.createElement("script");
-          script.src = "https://www.youtube.com/iframe_api";
-          document.head.appendChild(script);
+          const s = document.createElement("script");
+          s.src = "https://www.youtube.com/iframe_api";
+          document.head.appendChild(s);
         }
       }
     };
 
-    // Small timeout to ensure DOM is ready
-    const timer = setTimeout(tryInit, 50);
+    const t = setTimeout(tryInit, 50);
 
     return () => {
       destroyed = true;
-      clearTimeout(timer);
+      clearTimeout(t);
       clearInterval(timerRef.current);
       try {
         playerRef.current?.destroy?.();
       } catch {}
     };
-  }, [song.youtubeUrl, iframeId]);
+  }, [videoId, containerId]);
 
+  // Poll current time when playing
   useEffect(() => {
     clearInterval(timerRef.current);
     if (isPlaying && isReady) {
@@ -192,18 +375,23 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
   }, [isPlaying, isReady, isSeeking, duration]);
 
   const handlePlayPause = () => {
-    if (!isReady) return;
     try {
+      if (typeof playerRef.current?.playVideo !== "function") {
+        // Player not ready yet — queue the play action
+        pendingPlayRef.current = true;
+        return;
+      }
       if (isPlaying) {
         playerRef.current.pauseVideo();
       } else {
         playerRef.current.playVideo();
       }
-    } catch {}
+    } catch {
+      pendingPlayRef.current = true;
+    }
   };
 
   const handleRewind = () => {
-    if (!isReady) return;
     try {
       const t = Math.max(0, (playerRef.current?.getCurrentTime?.() ?? 0) - 10);
       playerRef.current.seekTo(t, true);
@@ -212,7 +400,6 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
   };
 
   const handleForward = () => {
-    if (!isReady) return;
     try {
       const t = Math.min(
         duration || 999,
@@ -223,22 +410,77 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
     } catch {}
   };
 
-  const handleSeekChange = (val: number) => {
-    setCurrentTime(val);
-    setIsSeeking(true);
-  };
-
-  const handleSeekCommit = (val: number) => {
-    if (!isReady) return;
-    try {
-      playerRef.current.seekTo(val, true);
-      setCurrentTime(val);
-    } catch {}
-    setIsSeeking(false);
-  };
-
   const progress = duration ? (currentTime / duration) * 100 : 0;
 
+  return (
+    <PlayerShell
+      song={song}
+      onClose={onClose}
+      isPlaying={isPlaying}
+      isReady={isReady}
+    >
+      {/* YouTube iframe rendered off-screen with proper dimensions so the API can init */}
+      <div
+        style={{
+          position: "fixed",
+          left: "-9999px",
+          top: "-9999px",
+          width: 320,
+          height: 180,
+          pointerEvents: "none",
+          zIndex: -1,
+        }}
+      >
+        <div id={containerId} />
+      </div>
+
+      {!isPlaying && (
+        <p
+          className="text-xs text-center mb-2"
+          style={{ color: "oklch(0.55 0.01 265)" }}
+        >
+          Tap ▶ to play
+        </p>
+      )}
+
+      <PlayerControls
+        isPlaying={isPlaying}
+        isReady={isReady}
+        currentTime={currentTime}
+        duration={duration}
+        progress={progress}
+        onPlayPause={handlePlayPause}
+        onRewind={handleRewind}
+        onForward={handleForward}
+        onSeekChange={(val) => {
+          setCurrentTime(val);
+          setIsSeeking(true);
+        }}
+        onSeekCommit={(val) => {
+          try {
+            playerRef.current.seekTo(val, true);
+            setCurrentTime(val);
+          } catch {}
+          setIsSeeking(false);
+        }}
+        ytMode
+      />
+    </PlayerShell>
+  );
+}
+
+// ─── Shared Shell ─────────────────────────────────────────────────────────────
+function PlayerShell({
+  song,
+  onClose,
+  isPlaying,
+  isReady,
+  children,
+}: AudioPlayerProps & {
+  isPlaying: boolean;
+  isReady: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -248,22 +490,8 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
       }}
       data-ocid="audio_player.modal"
     >
-      {/* Hidden YouTube iframe */}
       <div
-        style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          opacity: 0,
-          pointerEvents: "none",
-          overflow: "hidden",
-        }}
-      >
-        <div id={iframeId} />
-      </div>
-
-      <div
-        className="w-full max-w-sm rounded-3xl overflow-hidden animate-slide-up flex flex-col items-center"
+        className="w-full max-w-sm rounded-3xl overflow-hidden flex flex-col items-center"
         style={{
           background: "oklch(0.16 0.018 270)",
           border: "1px solid oklch(0.96 0.005 265 / 10%)",
@@ -299,7 +527,7 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
           </button>
         </div>
 
-        {/* MR Logo circle */}
+        {/* Logo circle */}
         <div
           className="relative flex items-center justify-center mb-6"
           style={{
@@ -324,7 +552,6 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
               borderRadius: "50%",
             }}
           />
-          {/* Loading spinner overlay */}
           {!isReady && (
             <div
               className="absolute inset-0 flex items-center justify-center rounded-full"
@@ -341,7 +568,6 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
           )}
         </div>
 
-        {/* Song title */}
         <h2
           className="text-center font-bold text-lg leading-tight mb-1 px-2"
           style={{ color: "oklch(0.96 0.005 265)", maxWidth: "100%" }}
@@ -349,133 +575,163 @@ export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
         >
           {song.title}
         </h2>
-        <p className="text-xs text-muted-foreground mb-6 tracking-wide">
+        <p className="text-xs text-muted-foreground mb-4 tracking-wide">
           Musical Rhythms
         </p>
 
-        {/* Waveform */}
-        <div className="w-full mb-5 px-2">
+        <div className="w-full mb-4 px-2">
           <WaveVisualizer isPlaying={isPlaying} />
         </div>
 
-        {/* Time display */}
-        <div
-          className="w-full flex justify-between text-xs font-medium mb-2 px-1"
-          style={{ color: "oklch(0.6 0.01 265)" }}
-        >
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-
-        {/* Seek slider */}
-        <div className="w-full mb-7 px-1">
-          <input
-            type="range"
-            min={0}
-            max={duration || 100}
-            value={currentTime}
-            step={0.5}
-            onChange={(e) => handleSeekChange(Number(e.target.value))}
-            onMouseUp={(e) =>
-              handleSeekCommit(Number((e.target as HTMLInputElement).value))
-            }
-            onTouchEnd={(e) =>
-              handleSeekCommit(Number((e.target as HTMLInputElement).value))
-            }
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-            style={{
-              background: `linear-gradient(to right, var(--accent-color) ${progress}%, oklch(0.30 0.01 265) ${progress}%)`,
-            }}
-            data-ocid="audio_player.seek_slider"
-          />
-        </div>
-
-        {/* Controls */}
-        <div className="flex items-center justify-center gap-8">
-          <button
-            type="button"
-            onClick={handleRewind}
-            disabled={!isReady}
-            className="flex flex-col items-center gap-1 p-3 rounded-full hover:bg-white/5 transition-colors disabled:opacity-40"
-            aria-label="Rewind 10 seconds"
-            data-ocid="audio_player.rewind_button"
-          >
-            <RotateCcw size={22} style={{ color: "oklch(0.75 0.01 265)" }} />
-            <span
-              className="text-[9px] font-semibold"
-              style={{ color: "oklch(0.5 0.01 265)" }}
-            >
-              10s
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePlayPause}
-            disabled={!isReady}
-            className="flex items-center justify-center rounded-full transition-all disabled:opacity-40"
-            style={{
-              width: 64,
-              height: 64,
-              background: "var(--accent-color)",
-              boxShadow: isPlaying
-                ? "0 0 24px oklch(var(--primary) / 0.5)"
-                : "none",
-              transition: "box-shadow 0.3s ease",
-            }}
-            aria-label={isPlaying ? "Pause" : "Play"}
-            data-ocid="audio_player.play_pause_button"
-          >
-            {isPlaying ? (
-              <Pause size={26} fill="white" style={{ color: "white" }} />
-            ) : (
-              <Play
-                size={26}
-                fill="white"
-                style={{ color: "white", marginLeft: 3 }}
-              />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleForward}
-            disabled={!isReady}
-            className="flex flex-col items-center gap-1 p-3 rounded-full hover:bg-white/5 transition-colors disabled:opacity-40"
-            aria-label="Forward 10 seconds"
-            data-ocid="audio_player.forward_button"
-          >
-            <RotateCw size={22} style={{ color: "oklch(0.75 0.01 265)" }} />
-            <span
-              className="text-[9px] font-semibold"
-              style={{ color: "oklch(0.5 0.01 265)" }}
-            >
-              10s
-            </span>
-          </button>
-        </div>
+        {children}
       </div>
 
       <style>{`
         input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          background: var(--accent-color);
-          cursor: pointer;
+          -webkit-appearance: none; appearance: none;
+          width: 14px; height: 14px; border-radius: 50%;
+          background: var(--accent-color); cursor: pointer;
           box-shadow: 0 0 6px oklch(var(--primary) / 0.5);
         }
         input[type=range]::-moz-range-thumb {
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          background: var(--accent-color);
-          cursor: pointer;
-          border: none;
+          width: 14px; height: 14px; border-radius: 50%;
+          background: var(--accent-color); cursor: pointer; border: none;
         }
       `}</style>
     </div>
   );
+}
+
+// ─── Shared Controls ──────────────────────────────────────────────────────────
+function PlayerControls({
+  isPlaying,
+  isReady,
+  currentTime,
+  duration,
+  progress,
+  onPlayPause,
+  onRewind,
+  onForward,
+  onSeekChange,
+  onSeekCommit,
+  ytMode,
+}: {
+  isPlaying: boolean;
+  isReady: boolean;
+  currentTime: number;
+  duration: number;
+  progress: number;
+  onPlayPause: () => void;
+  onRewind: () => void;
+  onForward: () => void;
+  onSeekChange: (v: number) => void;
+  onSeekCommit: (v: number) => void;
+  ytMode?: boolean;
+}) {
+  // For YouTube mode: play/pause always enabled, rewind/forward only when duration known
+  // For native mode: all buttons respect isReady
+  const seekDisabled = ytMode ? duration === 0 : !isReady;
+  const playDisabled = ytMode ? false : !isReady;
+
+  return (
+    <>
+      <div
+        className="w-full flex justify-between text-xs font-medium mb-2 px-1"
+        style={{ color: "oklch(0.6 0.01 265)" }}
+      >
+        <span>{formatTime(currentTime)}</span>
+        <span>{formatTime(duration)}</span>
+      </div>
+      <div className="w-full mb-7 px-1">
+        <input
+          type="range"
+          min={0}
+          max={duration || 100}
+          value={currentTime}
+          step={0.5}
+          onChange={(e) => onSeekChange(Number(e.target.value))}
+          onMouseUp={(e) =>
+            onSeekCommit(Number((e.target as HTMLInputElement).value))
+          }
+          onTouchEnd={(e) =>
+            onSeekCommit(Number((e.target as HTMLInputElement).value))
+          }
+          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(to right, var(--accent-color) ${progress}%, oklch(0.30 0.01 265) ${progress}%)`,
+          }}
+          data-ocid="audio_player.seek_slider"
+        />
+      </div>
+      <div className="flex items-center justify-center gap-8">
+        <button
+          type="button"
+          onClick={onRewind}
+          disabled={seekDisabled}
+          className="flex flex-col items-center gap-1 p-3 rounded-full hover:bg-white/5 transition-colors disabled:opacity-40"
+          aria-label="Rewind 10s"
+          data-ocid="audio_player.rewind_button"
+        >
+          <RotateCcw size={22} style={{ color: "oklch(0.75 0.01 265)" }} />
+          <span
+            className="text-[9px] font-semibold"
+            style={{ color: "oklch(0.5 0.01 265)" }}
+          >
+            10s
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onPlayPause}
+          disabled={playDisabled}
+          className="flex items-center justify-center rounded-full transition-all disabled:opacity-40"
+          style={{
+            width: 64,
+            height: 64,
+            background: "var(--accent-color)",
+            boxShadow: isPlaying
+              ? "0 0 24px oklch(var(--primary) / 0.5)"
+              : "none",
+            transition: "box-shadow 0.3s ease",
+          }}
+          aria-label={isPlaying ? "Pause" : "Play"}
+          data-ocid="audio_player.play_pause_button"
+        >
+          {isPlaying ? (
+            <Pause size={26} fill="white" style={{ color: "white" }} />
+          ) : (
+            <Play
+              size={26}
+              fill="white"
+              style={{ color: "white", marginLeft: 3 }}
+            />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onForward}
+          disabled={seekDisabled}
+          className="flex flex-col items-center gap-1 p-3 rounded-full hover:bg-white/5 transition-colors disabled:opacity-40"
+          aria-label="Forward 10s"
+          data-ocid="audio_player.forward_button"
+        >
+          <RotateCw size={22} style={{ color: "oklch(0.75 0.01 265)" }} />
+          <span
+            className="text-[9px] font-semibold"
+            style={{ color: "oklch(0.5 0.01 265)" }}
+          >
+            10s
+          </span>
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Main Export ──────────────────────────────────────────────────────────────
+export function AudioPlayer({ song, onClose }: AudioPlayerProps) {
+  if (isDirectAudioUrl(song.youtubeUrl)) {
+    return <NativeAudioPlayer song={song} onClose={onClose} />;
+  }
+  return <YouTubeAudioPlayer song={song} onClose={onClose} />;
 }

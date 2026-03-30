@@ -98,6 +98,15 @@ function getYouTubeVideoId(input: string): string {
   return s.split(/[&?]/)[0];
 }
 
+function isDirectAudioUrl(url: string): boolean {
+  const u = url.toLowerCase().trim();
+  if (u.match(/\.(mp3|ogg|wav|m4a|aac|flac|opus|webm)(\?.*)?$/)) return true;
+  if (u.includes("firebasestorage.googleapis.com") && u.includes("alt=media"))
+    return true;
+  if (u.includes("dropbox.com") && u.includes("dl=1")) return true;
+  return false;
+}
+
 export function AdminPage({
   songs,
   albums,
@@ -119,7 +128,9 @@ export function AdminPage({
   const [songYoutubeId, setSongYoutubeId] = useState("");
   const [songType, setSongType] = useState<"Video" | "Audio">("Video");
   const [songAlbumId, setSongAlbumId] = useState<string>("no-album");
-  const [songAdded, setSongAdded] = useState<{
+  type SongStatus = "idle" | "downloading" | "added";
+  const [songStatus, setSongStatus] = useState<SongStatus>("idle");
+  const [songAddedInfo, setSongAddedInfo] = useState<{
     title: string;
     albumName: string;
   } | null>(null);
@@ -183,12 +194,16 @@ export function AdminPage({
     )
       return;
     setError(null);
-    const videoId = getYouTubeVideoId(songYoutubeId);
+    setSongStatus("downloading");
+    const rawUrl = songYoutubeId.trim();
+    const youtubeUrl = isDirectAudioUrl(rawUrl)
+      ? rawUrl
+      : (getYouTubeVideoId(rawUrl) ?? rawUrl);
     try {
       await addSong({
         id: generateId(),
         title: songTitle.trim(),
-        youtubeUrl: videoId ?? songYoutubeId.trim(),
+        youtubeUrl: youtubeUrl,
         thumbnail: "",
         albumId: songAlbumId,
         type: songType,
@@ -197,11 +212,16 @@ export function AdminPage({
       await onDataChange();
       const albumNameStr =
         albums.find((a) => a.id === songAlbumId)?.name ?? "Unknown Album";
-      setSongAdded({ title: songTitle.trim(), albumName: albumNameStr });
+      setSongAddedInfo({ title: songTitle.trim(), albumName: albumNameStr });
+      setSongStatus("added");
       setSongTitle("");
       setSongYoutubeId("");
-      setTimeout(() => setSongAdded(null), 4000);
+      setTimeout(() => {
+        setSongStatus("idle");
+        setSongAddedInfo(null);
+      }, 4000);
     } catch (err: any) {
+      setSongStatus("idle");
       setError(err?.message || "Failed to add song. Please try again.");
     }
   };
@@ -736,7 +756,27 @@ export function AdminPage({
           Add Song
         </h2>
 
-        {songAdded && (
+        {songStatus === "downloading" && (
+          <div
+            className="flex items-center gap-2 mb-4 px-4 py-3 rounded-xl text-sm font-medium"
+            style={{
+              background: "oklch(0.75 0.18 80 / 0.15)",
+              border: "1px solid oklch(0.75 0.18 80 / 0.3)",
+              color: "oklch(0.75 0.18 80)",
+            }}
+            data-ocid="admin.song_added.notification"
+          >
+            <span
+              className="inline-block w-3.5 h-3.5 rounded-full border-2 animate-spin"
+              style={{
+                borderColor: "oklch(0.75 0.18 80)",
+                borderTopColor: "transparent",
+              }}
+            />
+            <span>⏳ Downloading and saving song...</span>
+          </div>
+        )}
+        {songStatus === "added" && songAddedInfo && (
           <div
             className="flex items-center gap-2 mb-4 px-4 py-3 rounded-xl text-sm font-medium"
             style={{
@@ -748,8 +788,8 @@ export function AdminPage({
           >
             <CheckCircle2 size={16} />
             <span>
-              <strong>{songAdded.title}</strong> added to{" "}
-              <strong>{songAdded.albumName}</strong>
+              <strong>{songAddedInfo.title}</strong> added to{" "}
+              <strong>{songAddedInfo.albumName}</strong>
             </span>
           </div>
         )}
@@ -769,15 +809,28 @@ export function AdminPage({
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">
-              YouTube URL or Video ID
+              YouTube URL / Direct Audio Link
             </Label>
             <Input
               value={songYoutubeId}
               onChange={(e) => setSongYoutubeId(e.target.value)}
-              placeholder="e.g. dQw4w9WgXcQ or full URL"
+              placeholder={
+                songType === "Audio"
+                  ? "YouTube URL, video ID, or direct .mp3 link"
+                  : "YouTube URL or video ID"
+              }
               className="bg-muted border-border"
               data-ocid="admin.youtube_url.input"
             />
+            {songType === "Audio" && (
+              <p
+                className="text-xs mt-1"
+                style={{ color: "oklch(0.55 0.01 265)" }}
+              >
+                For audio songs you can also paste a direct MP3 link (e.g. from
+                Firebase Storage or Dropbox).
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -828,17 +881,47 @@ export function AdminPage({
           <Button
             onClick={handleAddSong}
             disabled={
+              songStatus === "downloading" ||
+              songStatus === "added" ||
               !songTitle.trim() ||
               !songYoutubeId.trim() ||
               !songAlbumId ||
               songAlbumId === "no-album"
             }
             className="gap-2 w-full sm:w-auto"
-            style={{ background: "var(--accent-color)" }}
+            style={{
+              background:
+                songStatus === "downloading"
+                  ? "oklch(0.75 0.18 80)"
+                  : songStatus === "added"
+                    ? "oklch(0.52 0.20 145)"
+                    : "var(--accent-color)",
+              color: "white",
+            }}
             data-ocid="admin.add_song.button"
           >
-            <Plus size={14} />
-            Add Song
+            {songStatus === "downloading" ? (
+              <>
+                <span
+                  className="inline-block w-3.5 h-3.5 rounded-full border-2 animate-spin"
+                  style={{
+                    borderColor: "white",
+                    borderTopColor: "transparent",
+                  }}
+                />
+                Downloading...
+              </>
+            ) : songStatus === "added" ? (
+              <>
+                <CheckCircle2 size={14} />
+                Added ✓
+              </>
+            ) : (
+              <>
+                <Plus size={14} />
+                Add Song
+              </>
+            )}
           </Button>
         </div>
       </div>

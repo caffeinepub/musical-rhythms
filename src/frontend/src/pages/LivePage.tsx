@@ -3,6 +3,8 @@ import { Play, Share2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { subscribeToLiveUrl } from "../services/firebaseService";
 
+const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 interface LivePageProps {
   dataSaver?: boolean;
 }
@@ -17,28 +19,35 @@ export function LivePage({ dataSaver }: LivePageProps) {
     return unsub;
   }, []);
 
+  // Extract YouTube video ID from any YouTube URL
+  const getYouTubeVideoId = (url: string): string | null => {
+    if (!url) return null;
+    const watchMatch = url.match(/[?&]v=([^&]+)/);
+    if (watchMatch) return watchMatch[1];
+    const shortMatch = url.match(/youtu\.be\/([^?&]+)/);
+    if (shortMatch) return shortMatch[1];
+    const liveMatch = url.match(/youtube\.com\/live\/([^?&]+)/);
+    if (liveMatch) return liveMatch[1];
+    return null;
+  };
+
   // Convert YouTube watch URL to embed URL
   const getEmbedUrl = (url: string): string => {
     if (!url) return "";
     const qualityParam = dataSaver ? "&vq=large" : "";
-    const base = `?autoplay=1&rel=0${qualityParam}`;
-    const watchMatch = url.match(/[?&]v=([^&]+)/);
-    if (watchMatch) {
-      return `https://www.youtube.com/embed/${watchMatch[1]}${base}`;
-    }
-    const shortMatch = url.match(/youtu\.be\/([^?&]+)/);
-    if (shortMatch) {
-      return `https://www.youtube.com/embed/${shortMatch[1]}${base}`;
-    }
-    const liveMatch = url.match(/youtube\.com\/live\/([^?&]+)/);
-    if (liveMatch) {
-      return `https://www.youtube.com/embed/${liveMatch[1]}${base}`;
-    }
+    const base = `?autoplay=1&rel=0&playsinline=1${qualityParam}`;
+    const videoId = getYouTubeVideoId(url);
+    if (videoId) return `https://www.youtube.com/embed/${videoId}${base}`;
     return url;
   };
 
   const embedUrl = getEmbedUrl(liveUrl);
   const isLive = Boolean(liveUrl);
+  const videoId = getYouTubeVideoId(liveUrl);
+  const thumbnailUrl = videoId
+    ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+    : null;
+  const ytUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : null;
 
   const handleShareLive = () => {
     const shareLink = `${window.location.origin}${window.location.pathname}#/live`;
@@ -58,6 +67,55 @@ export function LivePage({ dataSaver }: LivePageProps) {
         setTimeout(() => setCopied(false), 3000);
       });
     }
+  };
+
+  const renderStream = () => {
+    if (!joined || !embedUrl) return null;
+
+    // iOS fallback — show thumbnail + open in YouTube
+    if (isIOS && videoId) {
+      return (
+        <div className="relative" style={{ paddingBottom: "56.25%" }}>
+          <div className="absolute inset-0">
+            <img
+              src={thumbnailUrl ?? ""}
+              alt="Live stream"
+              className="w-full h-full object-cover"
+            />
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center gap-4"
+              style={{ background: "rgba(0,0,0,0.5)" }}
+            >
+              <a
+                href={ytUrl ?? ""}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-6 py-3 rounded-full font-semibold text-sm text-white"
+                style={{ background: "oklch(0.52 0.22 25)" }}
+              >
+                <Play size={16} fill="white" /> Open in YouTube
+              </a>
+              <p className="text-xs text-white/70 text-center px-6">
+                Tap to open in YouTube app for best experience on iOS
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative" style={{ paddingBottom: "56.25%" }}>
+        <iframe
+          src={embedUrl}
+          className="absolute inset-0 w-full h-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          title="Live Stream"
+          style={{ border: "none" }}
+        />
+      </div>
+    );
   };
 
   return (
@@ -100,16 +158,7 @@ export function LivePage({ dataSaver }: LivePageProps) {
         data-ocid="live.panel"
       >
         {joined && embedUrl ? (
-          <div className="relative" style={{ paddingBottom: "56.25%" }}>
-            <iframe
-              src={embedUrl}
-              className="absolute inset-0 w-full h-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              title="Live Stream"
-              style={{ border: "none" }}
-            />
-          </div>
+          renderStream()
         ) : (
           <div className="relative" style={{ paddingBottom: "56.25%" }}>
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-6">
@@ -126,7 +175,9 @@ export function LivePage({ dataSaver }: LivePageProps) {
                       Live session is on!
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Click Join to watch the live stream
+                      {isIOS
+                        ? "Tap Join to open in YouTube app"
+                        : "Click Join to watch the live stream"}
                     </p>
                   </div>
                   <Button
