@@ -24,8 +24,8 @@ function extractYouTubeId(url: string): string {
 function RewindIcon() {
   return (
     <svg
-      width="28"
-      height="28"
+      width="36"
+      height="36"
       viewBox="0 0 28 28"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -65,8 +65,8 @@ function RewindIcon() {
 function ForwardIcon() {
   return (
     <svg
-      width="28"
-      height="28"
+      width="36"
+      height="36"
       viewBox="0 0 28 28"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -291,8 +291,8 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
             data-ocid="video_player.secondary_button"
             className="flex items-center justify-center rounded-full transition-all"
             style={{
-              width: 44,
-              height: 44,
+              width: 54,
+              height: 54,
               opacity: playerReady ? 1 : 0.4,
               cursor: playerReady ? "pointer" : "not-allowed",
               color: "oklch(0.72 0.05 265)",
@@ -351,8 +351,8 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
             data-ocid="video_player.secondary_button"
             className="flex items-center justify-center rounded-full transition-all"
             style={{
-              width: 44,
-              height: 44,
+              width: 54,
+              height: 54,
               opacity: playerReady ? 1 : 0.4,
               cursor: playerReady ? "pointer" : "not-allowed",
               color: "oklch(0.72 0.05 265)",
