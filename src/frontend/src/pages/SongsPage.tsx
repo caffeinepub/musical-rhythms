@@ -1,6 +1,5 @@
 import { Music, Search, Video } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { AudioPlayer } from "../components/AudioPlayer";
 import { SongCard } from "../components/SongCard";
 import { VideoPlayer } from "../components/VideoPlayer";
 import type { Album, Song } from "../types";
@@ -248,11 +247,8 @@ export function SongsPage({ songs, albums, dataSaver }: SongsPageProps) {
         </div>
       )}
 
-      {/* Player modal — audio or video depending on song type */}
-      {activeSong && activeSong.type === "Audio" && (
-        <AudioPlayer song={activeSong} onClose={() => setActiveSong(null)} />
-      )}
-      {activeSong && activeSong.type !== "Audio" && (
+      {/* Player modal — all songs open in VideoPlayer */}
+      {activeSong && (
         <VideoPlayer
           song={activeSong}
           onClose={() => setActiveSong(null)}
