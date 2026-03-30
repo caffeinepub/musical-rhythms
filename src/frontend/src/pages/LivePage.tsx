@@ -1,29 +1,21 @@
 import { Button } from "@/components/ui/button";
 import { Play, Share2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useActor } from "../hooks/useActor";
+import { subscribeToLiveUrl } from "../services/firebaseService";
 
 interface LivePageProps {
   dataSaver?: boolean;
 }
 
 export function LivePage({ dataSaver }: LivePageProps) {
-  const { actor } = useActor();
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [joined, setJoined] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!actor) return;
-    const fetchLiveUrl = async () => {
-      const result = await (actor as any).getLiveUrl();
-      const url = Array.isArray(result) ? (result[0] ?? "") : (result ?? "");
-      setLiveUrl(url);
-    };
-    fetchLiveUrl();
-    const interval = setInterval(fetchLiveUrl, 10000);
-    return () => clearInterval(interval);
-  }, [actor]);
+    const unsub = subscribeToLiveUrl((url) => setLiveUrl(url));
+    return unsub;
+  }, []);
 
   // Convert YouTube watch URL to embed URL
   const getEmbedUrl = (url: string): string => {

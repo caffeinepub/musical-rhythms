@@ -17,11 +17,22 @@ import {
   Share2,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ImageCropper } from "../components/ImageCropper";
 import { SocialIcon } from "../components/SocialIcon";
-import { useActor } from "../hooks/useActor";
+import {
+  addAlbum,
+  addSocialProfile,
+  addSong,
+  clearLiveUrl,
+  deleteAlbum,
+  deleteSocialProfile,
+  deleteSong,
+  getLiveUrl,
+  setLiveUrl,
+} from "../services/firebaseService";
 import type { Album, SocialProfile, Song } from "../types";
 
 const MUSICAL_ICONS = [
@@ -73,19 +84,35 @@ interface AdminPageProps {
   onDataChange: () => Promise<void>;
 }
 
+function getYouTubeVideoId(input: string): string {
+  const s = input.trim();
+  if (s.includes("watch?v=")) {
+    return s.split("watch?v=")[1]?.split(/[&?]/)[0] ?? s;
+  }
+  if (s.includes("youtu.be/")) {
+    return s.split("youtu.be/")[1]?.split(/[&?]/)[0] ?? s;
+  }
+  if (s.includes("youtube.com/embed/")) {
+    return s.split("youtube.com/embed/")[1]?.split(/[&?]/)[0] ?? s;
+  }
+  return s.split(/[&?]/)[0];
+}
+
 export function AdminPage({
   songs,
   albums,
   socialProfiles,
   onDataChange,
 }: AdminPageProps) {
-  const { actor } = useActor();
   const [isLoggedIn, setIsLoggedIn] = useState(
     () => localStorage.getItem("adminLoggedIn") === "true",
   );
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+
+  // Global error banner
+  const [error, setError] = useState<string | null>(null);
 
   // Add song form
   const [songTitle, setSongTitle] = useState("");
@@ -108,23 +135,21 @@ export function AdminPage({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Live stream URL
-  const [liveUrl, setLiveUrl] = useState("");
+  const [liveUrl, setLiveUrlState] = useState("");
   const [savedLiveUrl, setSavedLiveUrl] = useState("");
 
-  // Load live URL from backend on mount
+  // Load live URL from Firebase on mount
   useEffect(() => {
-    if (!actor) return;
-    (actor as any)
-      .getLiveUrl()
-      .then((result: string | string[]) => {
-        const url = Array.isArray(result) ? (result[0] ?? "") : (result ?? "");
+    getLiveUrl()
+      .then((url) => {
         if (url) {
           setSavedLiveUrl(url);
-          setLiveUrl(url);
+          setLiveUrlState(url);
         }
       })
       .catch(() => {});
-  }, [actor]);
+  }, []);
+
   const [liveSaved, setLiveSaved] = useState(false);
   const [shareLiveCopied, setShareLiveCopied] = useState(false);
 
@@ -154,42 +179,41 @@ export function AdminPage({
       !songTitle.trim() ||
       !songYoutubeId.trim() ||
       !songAlbumId ||
-      songAlbumId === "no-album" ||
-      !actor
+      songAlbumId === "no-album"
     )
       return;
-    const videoId = songYoutubeId.includes("watch?v=")
-      ? songYoutubeId.split("watch?v=")[1]?.split("&")[0]
-      : songYoutubeId.includes("youtu.be/")
-        ? songYoutubeId.split("youtu.be/")[1]
-        : songYoutubeId.trim();
-    const newSong: Song = {
-      id: generateId(),
-      title: songTitle.trim(),
-      youtubeUrl: videoId ?? songYoutubeId.trim(),
-      thumbnail: "",
-      albumId: songAlbumId,
-      type: songType,
-      addedAt: Date.now(),
-    };
-    await (actor as any).addSong({
-      ...newSong,
-      songType: newSong.type,
-      addedAt: BigInt(newSong.addedAt ?? Date.now()),
-    });
-    await onDataChange();
-    const albumNameStr =
-      albums.find((a) => a.id === songAlbumId)?.name ?? "Unknown Album";
-    setSongAdded({ title: songTitle.trim(), albumName: albumNameStr });
-    setSongTitle("");
-    setSongYoutubeId("");
-    setTimeout(() => setSongAdded(null), 4000);
+    setError(null);
+    const videoId = getYouTubeVideoId(songYoutubeId);
+    try {
+      await addSong({
+        id: generateId(),
+        title: songTitle.trim(),
+        youtubeUrl: videoId ?? songYoutubeId.trim(),
+        thumbnail: "",
+        albumId: songAlbumId,
+        type: songType,
+        addedAt: Date.now(),
+      });
+      await onDataChange();
+      const albumNameStr =
+        albums.find((a) => a.id === songAlbumId)?.name ?? "Unknown Album";
+      setSongAdded({ title: songTitle.trim(), albumName: albumNameStr });
+      setSongTitle("");
+      setSongYoutubeId("");
+      setTimeout(() => setSongAdded(null), 4000);
+    } catch (err: any) {
+      setError(err?.message || "Failed to add song. Please try again.");
+    }
   };
 
   const handleDeleteSong = async (id: string) => {
-    if (!actor) return;
-    await (actor as any).deleteSong(id);
-    await onDataChange();
+    setError(null);
+    try {
+      await deleteSong(id);
+      await onDataChange();
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete song. Please try again.");
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,42 +228,60 @@ export function AdminPage({
   };
 
   const handleAddAlbum = async () => {
-    if (!albumName.trim() || !actor) return;
-    const newAlbum: Album = {
-      id: generateId(),
-      name: albumName.trim(),
-      imageUrl: albumImageMode === "upload" ? albumImageDataUrl : "",
-      icon: albumImageMode === "icon" ? albumIcon : "",
-    };
-    await (actor as any).addAlbum(newAlbum);
-    await onDataChange();
-    setAlbumName("");
-    setAlbumImageDataUrl("");
-    setAlbumIcon("🎵");
-    setAlbumImageMode("icon");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!albumName.trim()) return;
+    setError(null);
+    try {
+      await addAlbum({
+        id: generateId(),
+        name: albumName.trim(),
+        imageUrl: albumImageMode === "upload" ? albumImageDataUrl : "",
+        icon: albumImageMode === "icon" ? albumIcon : "",
+      });
+      await onDataChange();
+      setAlbumName("");
+      setAlbumImageDataUrl("");
+      setAlbumIcon("🎵");
+      setAlbumImageMode("icon");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err: any) {
+      setError(err?.message || "Failed to create album. Please try again.");
+    }
   };
 
   const handleDeleteAlbum = async (id: string) => {
-    if (!actor) return;
-    await (actor as any).deleteAlbum(id);
-    await onDataChange();
+    setError(null);
+    try {
+      await deleteAlbum(id);
+      await onDataChange();
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete album. Please try again.");
+    }
   };
 
   const handleSetLiveUrl = async () => {
     const url = liveUrl.trim();
     if (!url) return;
-    if (actor) await (actor as any).setLiveUrl(url);
-    setSavedLiveUrl(url);
-    setLiveSaved(true);
-    setTimeout(() => setLiveSaved(false), 3000);
+    setError(null);
+    try {
+      await setLiveUrl(url);
+      setSavedLiveUrl(url);
+      setLiveSaved(true);
+      setTimeout(() => setLiveSaved(false), 3000);
+    } catch (err: any) {
+      setError(err?.message || "Failed to go live. Please try again.");
+    }
   };
 
   const handleClearLiveUrl = async () => {
-    if (actor) await (actor as any).clearLiveUrl();
-    setSavedLiveUrl("");
-    setLiveUrl("");
-    setLiveSaved(false);
+    setError(null);
+    try {
+      await clearLiveUrl();
+      setSavedLiveUrl("");
+      setLiveUrlState("");
+      setLiveSaved(false);
+    } catch (err: any) {
+      setError(err?.message || "Failed to end live. Please try again.");
+    }
   };
 
   const handleShareLive = () => {
@@ -263,25 +305,38 @@ export function AdminPage({
   };
 
   const handleAddSocialProfile = async () => {
-    if (!socialName.trim() || !socialUrl.trim() || !actor) return;
+    if (!socialName.trim() || !socialUrl.trim()) return;
+    setError(null);
     const newProfile: SocialProfile = {
       id: generateId(),
       name: socialName.trim(),
       icon: socialIcon,
       url: socialUrl.trim(),
     };
-    await (actor as any).addSocialProfile(newProfile);
-    await onDataChange();
-    setSocialName("");
-    setSocialUrl("");
-    setSocialAdded(true);
-    setTimeout(() => setSocialAdded(false), 3000);
+    try {
+      await addSocialProfile(newProfile);
+      await onDataChange();
+      setSocialName("");
+      setSocialUrl("");
+      setSocialAdded(true);
+      setTimeout(() => setSocialAdded(false), 3000);
+    } catch (err: any) {
+      setError(
+        err?.message || "Failed to add social profile. Please try again.",
+      );
+    }
   };
 
   const handleDeleteSocialProfile = async (id: string) => {
-    if (!actor) return;
-    await (actor as any).deleteSocialProfile(id);
-    await onDataChange();
+    setError(null);
+    try {
+      await deleteSocialProfile(id);
+      await onDataChange();
+    } catch (err: any) {
+      setError(
+        err?.message || "Failed to delete social profile. Please try again.",
+      );
+    }
   };
 
   const panelStyle = {
@@ -408,6 +463,30 @@ export function AdminPage({
         </Button>
       </div>
 
+      {/* Global error banner */}
+      {error && (
+        <div
+          className="flex items-start gap-3 px-4 py-3 rounded-xl text-sm font-medium"
+          style={{
+            background: "oklch(0.45 0.22 25 / 0.15)",
+            border: "1px solid oklch(0.55 0.22 25 / 0.4)",
+            color: "oklch(0.80 0.18 25)",
+          }}
+          data-ocid="admin.error_state"
+        >
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            aria-label="Dismiss error"
+            data-ocid="admin.error.close_button"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Live Stream URL */}
       <div
         className="rounded-2xl p-5"
@@ -439,7 +518,7 @@ export function AdminPage({
             <Input
               value={liveUrl}
               onChange={(e) => {
-                setLiveUrl(e.target.value);
+                setLiveUrlState(e.target.value);
                 setLiveSaved(false);
               }}
               placeholder="https://www.youtube.com/watch?v=..."
@@ -749,7 +828,10 @@ export function AdminPage({
           <Button
             onClick={handleAddSong}
             disabled={
-              !songTitle.trim() || !songYoutubeId.trim() || !songAlbumId
+              !songTitle.trim() ||
+              !songYoutubeId.trim() ||
+              !songAlbumId ||
+              songAlbumId === "no-album"
             }
             className="gap-2 w-full sm:w-auto"
             style={{ background: "var(--accent-color)" }}

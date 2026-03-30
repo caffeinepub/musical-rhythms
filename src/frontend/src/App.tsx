@@ -2,14 +2,13 @@ import React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
-import { migrateSong } from "./data/songs";
-import { useActor } from "./hooks/useActor";
 import { AboutPage } from "./pages/AboutPage";
 import { AdminPage } from "./pages/AdminPage";
 import { HomePage } from "./pages/HomePage";
 import { LivePage } from "./pages/LivePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SongsPage } from "./pages/SongsPage";
+import { subscribeToAll } from "./services/firebaseService";
 import type { Album, SocialProfile, Song } from "./types";
 
 function getHashPage(): string {
@@ -73,7 +72,6 @@ class AdminErrorBoundary extends React.Component<
 }
 
 export default function App() {
-  const { actor, isFetching } = useActor();
   const [currentPage, setCurrentPage] = useState<string>(getHashPage);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -98,110 +96,22 @@ export default function App() {
     return localStorage.getItem("dataSaver") === "true";
   });
 
-  const refreshData = useCallback(async () => {
-    if (!actor) return;
-    try {
-      const [rawSongs, rawAlbums, rawProfiles] = await Promise.all([
-        (actor as any).getSongs() as Promise<any[]>,
-        (actor as any).getAlbums() as Promise<Album[]>,
-        (actor as any).getSocialProfiles() as Promise<SocialProfile[]>,
-      ]);
-      const mappedSongs: Song[] = rawSongs.map((s: any) =>
-        migrateSong({ ...s, type: s.songType ?? s.type }),
-      );
-      setSongs(mappedSongs);
-      setAlbums(rawAlbums);
-      setSocialProfiles(rawProfiles);
-    } catch (e) {
-      console.error("Failed to refresh data", e);
-    }
-  }, [actor]);
-
-  // Initial load: fetch from backend, migrate from localStorage if needed
+  // Subscribe to Firebase real-time updates
   useEffect(() => {
-    if (!actor || isFetching) return;
-
-    (async () => {
-      try {
-        const [rawSongs, rawAlbums, rawProfiles] = await Promise.all([
-          (actor as any).getSongs() as Promise<any[]>,
-          (actor as any).getAlbums() as Promise<Album[]>,
-          (actor as any).getSocialProfiles() as Promise<SocialProfile[]>,
-        ]);
-
-        // Migration: if backend is empty but localStorage has data, migrate it
-        if (rawSongs.length === 0 && rawAlbums.length === 0) {
-          const localSongs = localStorage.getItem("songs");
-          const localAlbums = localStorage.getItem("albums");
-          const localProfiles = localStorage.getItem("socialProfiles");
-
-          const parsedAlbums: Album[] = localAlbums
-            ? (JSON.parse(localAlbums) as Album[])
-            : [];
-          const parsedSongs: Song[] = localSongs
-            ? (JSON.parse(localSongs) as Song[]).map(migrateSong)
-            : [];
-          const parsedProfiles: SocialProfile[] = localProfiles
-            ? (JSON.parse(localProfiles) as SocialProfile[])
-            : [];
-
-          if (
-            parsedAlbums.length > 0 ||
-            parsedSongs.length > 0 ||
-            parsedProfiles.length > 0
-          ) {
-            // Migrate albums first (songs reference albumIds)
-            await Promise.all(
-              parsedAlbums.map((a) =>
-                (actor as any).addAlbum({ ...a, icon: a.icon ?? "" }),
-              ),
-            );
-            await Promise.all(
-              parsedSongs.map((s) =>
-                (actor as any).addSong({
-                  ...s,
-                  songType: s.type,
-                  addedAt: BigInt(s.addedAt ?? Date.now()),
-                }),
-              ),
-            );
-            await Promise.all(
-              parsedProfiles.map((p) => (actor as any).addSocialProfile(p)),
-            );
-
-            // Clear localStorage after migration
-            localStorage.removeItem("songs");
-            localStorage.removeItem("albums");
-            localStorage.removeItem("socialProfiles");
-
-            setSongs(parsedSongs);
-            setAlbums(parsedAlbums);
-            setSocialProfiles(parsedProfiles);
-          } else {
-            setSongs([]);
-            setAlbums([]);
-            setSocialProfiles([]);
-          }
-        } else {
-          // Clear any leftover localStorage data
-          localStorage.removeItem("songs");
-          localStorage.removeItem("albums");
-          localStorage.removeItem("socialProfiles");
-
-          const mappedSongs: Song[] = rawSongs.map((s: any) =>
-            migrateSong({ ...s, type: s.songType ?? s.type }),
-          );
-          setSongs(mappedSongs);
-          setAlbums(rawAlbums);
-          setSocialProfiles(rawProfiles);
-        }
-      } catch (e) {
-        console.error("Failed to load data from backend", e);
-      } finally {
+    const unsub = subscribeToAll(
+      ({ songs: s, albums: a, socialProfiles: p }) => {
+        setSongs(s);
+        setAlbums(a);
+        setSocialProfiles(p);
         setIsLoading(false);
-      }
-    })();
-  }, [actor, isFetching]);
+      },
+    );
+    return unsub;
+  }, []);
+
+  const refreshData = useCallback(async () => {
+    // No-op: Firebase subscriptions handle real-time updates automatically
+  }, []);
 
   useEffect(() => {
     const html = document.documentElement;
