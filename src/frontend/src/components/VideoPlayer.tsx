@@ -1,4 +1,4 @@
-import { ChevronLeft, Maximize, Minimize, Volume2, X } from "lucide-react";
+import { ChevronLeft, Maximize, Minimize, Pause, Play, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Song } from "../types";
 
@@ -21,6 +21,88 @@ function extractYouTubeId(url: string): string {
   }
 }
 
+function RewindIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Rewind 10 seconds"
+    >
+      <path
+        d="M7.5 14 A6.5 6.5 0 1 1 10.5 19.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <polyline
+        points="5,11 7.5,14 10.5,12"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <text
+        x="14"
+        y="16.5"
+        textAnchor="middle"
+        fontSize="7"
+        fontWeight="700"
+        fill="currentColor"
+        fontFamily="system-ui"
+      >
+        10
+      </text>
+    </svg>
+  );
+}
+
+function ForwardIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Forward 10 seconds"
+    >
+      <path
+        d="M20.5 14 A6.5 6.5 0 1 0 17.5 19.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <polyline
+        points="23,11 20.5,14 17.5,12"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <text
+        x="14"
+        y="16.5"
+        textAnchor="middle"
+        fontSize="7"
+        fontWeight="700"
+        fill="currentColor"
+        fontFamily="system-ui"
+      >
+        10
+      </text>
+    </svg>
+  );
+}
+
 interface VideoPlayerProps {
   song: Song;
   onClose: () => void;
@@ -31,45 +113,44 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
   const videoId = extractYouTubeId(song.youtubeUrl || "");
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [volume, setVolume] = useState(70);
   const [playerReady, setPlayerReady] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
-  const playerDivId = "yt-video-player";
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerDivId = `yt-video-player-${videoId}`;
 
-  // Fullscreen listener
   useEffect(() => {
-    const handleFsChange = () => {
+    const handleFsChange = () =>
       setIsFullscreen(Boolean(document.fullscreenElement));
-    };
     document.addEventListener("fullscreenchange", handleFsChange);
     return () =>
       document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
-  // Load YT IFrame API and create player
+  // biome-ignore lint/correctness/useExhaustiveDependencies: videoId triggers player re-init when song changes
   useEffect(() => {
-    const initPlayer = () => {
-      playerRef.current = new window.YT.Player(playerDivId, {
-        videoId,
-        playerVars: {
-          autoplay: 1,
-          rel: 0,
-          playsinline: 1,
-          ...(dataSaver ? { vq: "large" } : {}),
-        },
+    const attachPlayer = () => {
+      if (!iframeRef.current) return;
+      playerRef.current = new window.YT.Player(iframeRef.current, {
         events: {
           onReady: (event: any) => {
-            event.target.setVolume(70);
+            event.target.setVolume(100);
+            event.target.playVideo();
             setPlayerReady(true);
+            setIsPlaying(true);
+          },
+          onStateChange: (event: any) => {
+            if (event.data === 1) setIsPlaying(true);
+            else if (event.data === 2 || event.data === 0) setIsPlaying(false);
           },
         },
       });
     };
 
     if (window.YT?.Player) {
-      initPlayer();
+      attachPlayer();
     } else {
       if (!document.getElementById("yt-iframe-api")) {
         const script = document.createElement("script");
@@ -77,7 +158,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         script.src = "https://www.youtube.com/iframe_api";
         document.head.appendChild(script);
       }
-      window.onYouTubeIframeAPIReady = initPlayer;
+      window.onYouTubeIframeAPIReady = attachPlayer;
     }
 
     return () => {
@@ -88,26 +169,43 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
       }
       playerRef.current = null;
       setPlayerReady(false);
+      setIsPlaying(false);
     };
-  }, [videoId, dataSaver]);
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = Number(e.target.value);
-    setVolume(val);
-    if (playerRef.current?.setVolume) {
-      playerRef.current.setVolume(val);
-    }
-  };
+  }, [videoId]);
 
   const toggleFullscreen = () => {
-    if (!isFullscreen) {
+    if (!isFullscreen)
       containerRef.current?.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
+    else document.exitFullscreen().catch(() => {});
   };
 
-  const isHighVolume = volume > 80;
+  const handlePlayPause = () => {
+    if (!playerReady || !playerRef.current) return;
+    if (isPlaying) playerRef.current.pauseVideo();
+    else playerRef.current.playVideo();
+  };
+
+  const handleRewind = () => {
+    if (!playerReady || !playerRef.current) return;
+    playerRef.current.seekTo(
+      Math.max(0, playerRef.current.getCurrentTime() - 10),
+      true,
+    );
+  };
+
+  const handleForward = () => {
+    if (!playerReady || !playerRef.current) return;
+    playerRef.current.seekTo(playerRef.current.getCurrentTime() + 10, true);
+  };
+
+  // Build embed URL with all parameters to hide YouTube UI and autoplay
+  const qualityParam = dataSaver ? "&vq=large" : "";
+  const iframeSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&showinfo=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}${qualityParam}`;
+
+  const bar = {
+    background: "oklch(0.17 0.010 265)",
+    borderTop: "1px solid oklch(0.96 0.005 265 / 8%)",
+  };
 
   return (
     <div
@@ -135,8 +233,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
             className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-lg hover:bg-muted"
             data-ocid="video_player.close_button"
           >
-            <ChevronLeft size={16} />
-            Back
+            <ChevronLeft size={16} /> Back
           </button>
           <h2 className="text-sm font-semibold text-foreground truncate px-4 flex-1 text-center">
             {song.title}
@@ -167,90 +264,121 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
           </div>
         </div>
 
-        {/* Video embed via YT Player API */}
+        {/* Video embed — muted autoplay with all YouTube UI hidden */}
         <div className="relative" style={{ paddingBottom: "56.25%" }}>
-          <div id={playerDivId} className="absolute inset-0 w-full h-full" />
+          <iframe
+            ref={iframeRef}
+            id={playerDivId}
+            src={iframeSrc}
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 w-full h-full"
+            style={{ border: "none" }}
+            title={song.title}
+          />
         </div>
 
-        {/* Volume control */}
+        {/* Playback controls */}
         <div
-          className="px-5 py-4"
-          style={{
-            background: "oklch(0.17 0.010 265)",
-            borderTop: "1px solid oklch(0.96 0.005 265 / 8%)",
-          }}
+          className="flex items-center justify-center gap-8 py-3"
+          style={bar}
         >
-          <div className="flex items-center gap-3 mb-2">
-            <Volume2
-              size={16}
-              style={{
-                color: isHighVolume
-                  ? "#f87171"
-                  : "oklch(var(--muted-foreground))",
-              }}
-              className="flex-shrink-0"
-            />
-            <span
-              className="text-xs font-semibold"
-              style={{
-                color: isHighVolume
-                  ? "#f87171"
-                  : "oklch(var(--muted-foreground))",
-              }}
-            >
-              Volume
-            </span>
-            <span
-              className="text-xs font-bold ml-auto"
-              style={{
-                color: isHighVolume ? "#f87171" : "oklch(var(--foreground))",
-              }}
-            >
-              {volume}%
-            </span>
-          </div>
-
-          {/* Slider */}
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={volume}
-            onChange={handleVolumeChange}
-            data-ocid="video_player.toggle"
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer outline-none"
+          <button
+            type="button"
+            onClick={handleRewind}
+            disabled={!playerReady}
+            aria-label="Rewind 10 seconds"
+            data-ocid="video_player.secondary_button"
+            className="flex items-center justify-center rounded-full transition-all"
             style={{
-              background: `linear-gradient(to right, ${
-                isHighVolume
-                  ? "#f87171"
-                  : "var(--accent-color, oklch(0.72 0.19 290))"
-              } ${volume}%, oklch(0.28 0.010 265) ${volume}%)`,
-              accentColor: isHighVolume
-                ? "#f87171"
-                : "var(--accent-color, oklch(0.72 0.19 290))",
+              width: 44,
+              height: 44,
+              opacity: playerReady ? 1 : 0.4,
+              cursor: playerReady ? "pointer" : "not-allowed",
+              color: "oklch(0.72 0.05 265)",
+              background: "transparent",
             }}
-          />
+            onMouseEnter={(e) => {
+              if (playerReady)
+                (e.currentTarget as HTMLElement).style.background =
+                  "oklch(0.96 0.005 265 / 10%)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "transparent";
+            }}
+          >
+            <RewindIcon />
+          </button>
 
-          {/* Warning */}
-          {isHighVolume && (
-            <p
-              className="mt-2 text-xs font-medium flex items-center gap-1.5"
-              style={{ color: "#f87171" }}
-              data-ocid="video_player.error_state"
-            >
-              ⚠️ High volume may damage your hearing
-            </p>
-          )}
+          <button
+            type="button"
+            onClick={handlePlayPause}
+            disabled={!playerReady}
+            aria-label={isPlaying ? "Pause" : "Play"}
+            data-ocid="video_player.primary_button"
+            className="flex items-center justify-center rounded-full transition-all"
+            style={{
+              width: 52,
+              height: 52,
+              background: playerReady
+                ? "var(--accent-color, oklch(0.72 0.19 290))"
+                : "oklch(0.35 0.010 265)",
+              opacity: playerReady ? 1 : 0.4,
+              cursor: playerReady ? "pointer" : "not-allowed",
+              boxShadow: playerReady
+                ? "0 4px 16px oklch(0.72 0.19 290 / 40%)"
+                : "none",
+              flexShrink: 0,
+            }}
+          >
+            {isPlaying ? (
+              <Pause size={22} color="white" fill="white" />
+            ) : (
+              <Play
+                size={22}
+                color="white"
+                fill="white"
+                style={{ marginLeft: 2 }}
+              />
+            )}
+          </button>
 
-          {!playerReady && (
-            <p
-              className="mt-2 text-xs"
-              style={{ color: "oklch(var(--muted-foreground))" }}
-            >
-              Loading player...
-            </p>
-          )}
+          <button
+            type="button"
+            onClick={handleForward}
+            disabled={!playerReady}
+            aria-label="Forward 10 seconds"
+            data-ocid="video_player.secondary_button"
+            className="flex items-center justify-center rounded-full transition-all"
+            style={{
+              width: 44,
+              height: 44,
+              opacity: playerReady ? 1 : 0.4,
+              cursor: playerReady ? "pointer" : "not-allowed",
+              color: "oklch(0.72 0.05 265)",
+              background: "transparent",
+            }}
+            onMouseEnter={(e) => {
+              if (playerReady)
+                (e.currentTarget as HTMLElement).style.background =
+                  "oklch(0.96 0.005 265 / 10%)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "transparent";
+            }}
+          >
+            <ForwardIcon />
+          </button>
+        </div>
+
+        {/* Volume info — browsers cannot control device volume */}
+        <div className="px-5 py-3 flex items-center justify-center" style={bar}>
+          <span
+            className="text-xs text-center"
+            style={{ color: "oklch(0.58 0.01 265)" }}
+          >
+            🔊 Use your device volume buttons to adjust volume
+          </span>
         </div>
       </div>
     </div>
