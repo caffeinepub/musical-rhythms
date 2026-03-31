@@ -120,10 +120,9 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
   const [controlsVisible, setControlsVisible] = useState(true);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const playerDivRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const playerDivId = `yt-video-player-${videoId}`;
 
   const startHideTimer = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -160,12 +159,35 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: videoId triggers player re-init
   useEffect(() => {
-    const attachPlayer = () => {
-      if (!iframeRef.current) return;
-      playerRef.current = new window.YT.Player(iframeRef.current, {
+    if (!videoId) return;
+
+    const initPlayer = () => {
+      if (!playerDivRef.current) return;
+
+      // Clear any previous player
+      if (playerRef.current?.destroy) {
+        try {
+          playerRef.current.destroy();
+        } catch {}
+        playerRef.current = null;
+      }
+
+      const quality = dataSaver ? "large" : "default";
+
+      playerRef.current = new window.YT.Player(playerDivRef.current, {
+        videoId: videoId,
+        playerVars: {
+          autoplay: 1,
+          mute: 1,
+          playsinline: 1,
+          controls: 0,
+          modestbranding: 1,
+          rel: 0,
+          showinfo: 0,
+          suggestedQuality: quality,
+        },
         events: {
           onReady: (event: any) => {
-            // Start muted (browser autoplay requirement), then immediately unmute at full volume
             event.target.unMute();
             event.target.setVolume(100);
             event.target.playVideo();
@@ -181,7 +203,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
     };
 
     if (window.YT?.Player) {
-      attachPlayer();
+      initPlayer();
     } else {
       if (!document.getElementById("yt-iframe-api")) {
         const script = document.createElement("script");
@@ -189,7 +211,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         script.src = "https://www.youtube.com/iframe_api";
         document.head.appendChild(script);
       }
-      window.onYouTubeIframeAPIReady = attachPlayer;
+      window.onYouTubeIframeAPIReady = initPlayer;
     }
 
     return () => {
@@ -231,9 +253,6 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
     playerRef.current.seekTo(playerRef.current.getCurrentTime() + 10, true);
     if (isFullscreen) startHideTimer();
   };
-
-  const qualityParam = dataSaver ? "&vq=large" : "";
-  const iframeSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&showinfo=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}${qualityParam}`;
 
   const accentColor = "var(--accent-color, oklch(0.72 0.19 290))";
   const barBg = "oklch(0.17 0.010 265)";
@@ -317,6 +336,13 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
     </div>
   );
 
+  const playerDiv = (
+    <div
+      ref={playerDivRef}
+      style={{ width: "100%", height: "100%", background: "#000" }}
+    />
+  );
+
   if (isFullscreen) {
     return (
       // biome-ignore lint/a11y/useKeyWithClickEvents: tap-to-show overlay for video fullscreen
@@ -326,16 +352,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         onClick={handleTapOnVideo}
         style={{ cursor: controlsVisible ? "default" : "none" }}
       >
-        <iframe
-          ref={iframeRef}
-          id={playerDivId}
-          src={iframeSrc}
-          allow="autoplay; fullscreen; picture-in-picture"
-          allowFullScreen
-          className="w-full h-full"
-          style={{ border: "none", position: "absolute", inset: 0 }}
-          title={song.title}
-        />
+        <div className="w-full h-full">{playerDiv}</div>
 
         <div
           className="absolute inset-0 flex flex-col justify-between pointer-events-none"
@@ -432,16 +449,9 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         </div>
 
         <div className="relative" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            ref={iframeRef}
-            id={playerDivId}
-            src={iframeSrc}
-            allow="autoplay; fullscreen; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 w-full h-full"
-            style={{ border: "none" }}
-            title={song.title}
-          />
+          <div className="absolute inset-0" style={{ background: "#000" }}>
+            {playerDiv}
+          </div>
         </div>
 
         {controls}
