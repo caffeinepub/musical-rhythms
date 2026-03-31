@@ -1,5 +1,5 @@
-import { ChevronLeft, Maximize, Minimize, Pause, Play, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, Maximize, Minimize, Pause, Play } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Song } from "../types";
 
 declare global {
@@ -32,6 +32,7 @@ function RewindIcon() {
       role="img"
       aria-label="Rewind 10 seconds"
     >
+      <title>Rewind 10 seconds</title>
       <path
         d="M7.5 14 A6.5 6.5 0 1 1 10.5 19.5"
         stroke="currentColor"
@@ -73,6 +74,7 @@ function ForwardIcon() {
       role="img"
       aria-label="Forward 10 seconds"
     >
+      <title>Forward 10 seconds</title>
       <path
         d="M20.5 14 A6.5 6.5 0 1 0 17.5 19.5"
         stroke="currentColor"
@@ -115,27 +117,56 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerDivId = `yt-video-player-${videoId}`;
 
+  const startHideTimer = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setControlsVisible(true);
+    hideTimerRef.current = setTimeout(() => setControlsVisible(false), 3000);
+  }, []);
+
   useEffect(() => {
-    const handleFsChange = () =>
-      setIsFullscreen(Boolean(document.fullscreenElement));
+    const handleFsChange = () => {
+      const fs = Boolean(document.fullscreenElement);
+      setIsFullscreen(fs);
+      if (fs) {
+        try {
+          (screen.orientation as any).lock("landscape").catch(() => {});
+        } catch {}
+        startHideTimer();
+      } else {
+        try {
+          (screen.orientation as any).unlock();
+        } catch {}
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        setControlsVisible(true);
+      }
+    };
     document.addEventListener("fullscreenchange", handleFsChange);
     return () =>
       document.removeEventListener("fullscreenchange", handleFsChange);
-  }, []);
+  }, [startHideTimer]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: videoId triggers player re-init when song changes
+  const handleTapOnVideo = useCallback(() => {
+    if (!isFullscreen) return;
+    startHideTimer();
+  }, [isFullscreen, startHideTimer]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: videoId triggers player re-init
   useEffect(() => {
     const attachPlayer = () => {
       if (!iframeRef.current) return;
       playerRef.current = new window.YT.Player(iframeRef.current, {
         events: {
           onReady: (event: any) => {
+            // Start muted (browser autoplay requirement), then immediately unmute at full volume
+            event.target.unMute();
             event.target.setVolume(100);
             event.target.playVideo();
             setPlayerReady(true);
@@ -183,6 +214,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
     if (!playerReady || !playerRef.current) return;
     if (isPlaying) playerRef.current.pauseVideo();
     else playerRef.current.playVideo();
+    if (isFullscreen) startHideTimer();
   };
 
   const handleRewind = () => {
@@ -191,21 +223,175 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
       Math.max(0, playerRef.current.getCurrentTime() - 10),
       true,
     );
+    if (isFullscreen) startHideTimer();
   };
 
   const handleForward = () => {
     if (!playerReady || !playerRef.current) return;
     playerRef.current.seekTo(playerRef.current.getCurrentTime() + 10, true);
+    if (isFullscreen) startHideTimer();
   };
 
-  // Build embed URL with all parameters to hide YouTube UI and autoplay
   const qualityParam = dataSaver ? "&vq=large" : "";
   const iframeSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&showinfo=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}${qualityParam}`;
 
-  const bar = {
-    background: "oklch(0.17 0.010 265)",
-    borderTop: "1px solid oklch(0.96 0.005 265 / 8%)",
-  };
+  const accentColor = "var(--accent-color, oklch(0.72 0.19 290))";
+  const barBg = "oklch(0.17 0.010 265)";
+  const barBorder = "1px solid oklch(0.96 0.005 265 / 8%)";
+
+  const controls = (
+    <div
+      className="flex flex-col gap-0"
+      style={isFullscreen ? {} : { borderTop: barBorder }}
+    >
+      <div
+        className="flex items-center justify-center gap-8 py-4"
+        style={isFullscreen ? {} : { background: barBg }}
+      >
+        <button
+          type="button"
+          onClick={handleRewind}
+          disabled={!playerReady}
+          aria-label="Rewind 10 seconds"
+          className="flex items-center justify-center rounded-full transition-all"
+          style={{
+            width: 54,
+            height: 54,
+            opacity: playerReady ? 1 : 0.4,
+            cursor: playerReady ? "pointer" : "not-allowed",
+            color: isFullscreen ? "white" : "oklch(0.72 0.05 265)",
+            background: "transparent",
+          }}
+        >
+          <RewindIcon />
+        </button>
+
+        <button
+          type="button"
+          onClick={handlePlayPause}
+          disabled={!playerReady}
+          aria-label={isPlaying ? "Pause" : "Play"}
+          className="flex items-center justify-center rounded-full transition-all"
+          style={{
+            width: 52,
+            height: 52,
+            background: playerReady ? accentColor : "oklch(0.35 0.010 265)",
+            opacity: playerReady ? 1 : 0.4,
+            cursor: playerReady ? "pointer" : "not-allowed",
+            boxShadow: playerReady
+              ? "0 4px 16px oklch(0.72 0.19 290 / 40%)"
+              : "none",
+            flexShrink: 0,
+          }}
+        >
+          {isPlaying ? (
+            <Pause size={22} color="white" fill="white" />
+          ) : (
+            <Play
+              size={22}
+              color="white"
+              fill="white"
+              style={{ marginLeft: 2 }}
+            />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleForward}
+          disabled={!playerReady}
+          aria-label="Forward 10 seconds"
+          className="flex items-center justify-center rounded-full transition-all"
+          style={{
+            width: 54,
+            height: 54,
+            opacity: playerReady ? 1 : 0.4,
+            cursor: playerReady ? "pointer" : "not-allowed",
+            color: isFullscreen ? "white" : "oklch(0.72 0.05 265)",
+            background: "transparent",
+          }}
+        >
+          <ForwardIcon />
+        </button>
+      </div>
+    </div>
+  );
+
+  if (isFullscreen) {
+    return (
+      // biome-ignore lint/a11y/useKeyWithClickEvents: tap-to-show overlay for video fullscreen
+      <div
+        ref={containerRef}
+        className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
+        onClick={handleTapOnVideo}
+        style={{ cursor: controlsVisible ? "default" : "none" }}
+      >
+        <iframe
+          ref={iframeRef}
+          id={playerDivId}
+          src={iframeSrc}
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+          className="w-full h-full"
+          style={{ border: "none", position: "absolute", inset: 0 }}
+          title={song.title}
+        />
+
+        <div
+          className="absolute inset-0 flex flex-col justify-between pointer-events-none"
+          style={{
+            transition: "opacity 0.3s ease",
+            opacity: controlsVisible ? 1 : 0,
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-4 pt-4 pb-8 pointer-events-auto"
+            style={{
+              background:
+                "linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="flex items-center gap-1.5 text-sm font-medium text-white"
+            >
+              <ChevronLeft size={20} /> Back
+            </button>
+            <span className="text-sm font-semibold text-white truncate px-4 flex-1 text-center">
+              {song.title}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+              }}
+              className="p-1.5"
+              aria-label="Exit fullscreen"
+            >
+              <Minimize size={20} className="text-white" />
+            </button>
+          </div>
+
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation helper div */}
+          <div
+            className="pointer-events-auto"
+            style={{
+              background:
+                "linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {controls}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -214,7 +400,6 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         background: "oklch(0.158 0.010 265 / 0.96)",
         backdropFilter: "blur(16px)",
       }}
-      data-ocid="video_player.modal"
     >
       <div
         ref={containerRef}
@@ -225,46 +410,27 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
           boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
         }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b border-border">
           <button
             type="button"
             onClick={onClose}
             className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-lg hover:bg-muted"
-            data-ocid="video_player.close_button"
           >
             <ChevronLeft size={16} /> Back
           </button>
           <h2 className="text-sm font-semibold text-foreground truncate px-4 flex-1 text-center">
             {song.title}
           </h2>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-              data-ocid="video_player.toggle"
-            >
-              {isFullscreen ? (
-                <Minimize size={18} className="text-muted-foreground" />
-              ) : (
-                <Maximize size={18} className="text-muted-foreground" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-              aria-label="Close player"
-              data-ocid="video_player.cancel_button"
-            >
-              <X size={18} className="text-muted-foreground" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+            aria-label="Fullscreen"
+          >
+            <Maximize size={18} className="text-muted-foreground" />
+          </button>
         </div>
 
-        {/* Video embed — muted autoplay with all YouTube UI hidden */}
         <div className="relative" style={{ paddingBottom: "56.25%" }}>
           <iframe
             ref={iframeRef}
@@ -278,108 +444,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
           />
         </div>
 
-        {/* Playback controls */}
-        <div
-          className="flex items-center justify-center gap-8 py-3"
-          style={bar}
-        >
-          <button
-            type="button"
-            onClick={handleRewind}
-            disabled={!playerReady}
-            aria-label="Rewind 10 seconds"
-            data-ocid="video_player.secondary_button"
-            className="flex items-center justify-center rounded-full transition-all"
-            style={{
-              width: 54,
-              height: 54,
-              opacity: playerReady ? 1 : 0.4,
-              cursor: playerReady ? "pointer" : "not-allowed",
-              color: "oklch(0.72 0.05 265)",
-              background: "transparent",
-            }}
-            onMouseEnter={(e) => {
-              if (playerReady)
-                (e.currentTarget as HTMLElement).style.background =
-                  "oklch(0.96 0.005 265 / 10%)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "transparent";
-            }}
-          >
-            <RewindIcon />
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePlayPause}
-            disabled={!playerReady}
-            aria-label={isPlaying ? "Pause" : "Play"}
-            data-ocid="video_player.primary_button"
-            className="flex items-center justify-center rounded-full transition-all"
-            style={{
-              width: 52,
-              height: 52,
-              background: playerReady
-                ? "var(--accent-color, oklch(0.72 0.19 290))"
-                : "oklch(0.35 0.010 265)",
-              opacity: playerReady ? 1 : 0.4,
-              cursor: playerReady ? "pointer" : "not-allowed",
-              boxShadow: playerReady
-                ? "0 4px 16px oklch(0.72 0.19 290 / 40%)"
-                : "none",
-              flexShrink: 0,
-            }}
-          >
-            {isPlaying ? (
-              <Pause size={22} color="white" fill="white" />
-            ) : (
-              <Play
-                size={22}
-                color="white"
-                fill="white"
-                style={{ marginLeft: 2 }}
-              />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleForward}
-            disabled={!playerReady}
-            aria-label="Forward 10 seconds"
-            data-ocid="video_player.secondary_button"
-            className="flex items-center justify-center rounded-full transition-all"
-            style={{
-              width: 54,
-              height: 54,
-              opacity: playerReady ? 1 : 0.4,
-              cursor: playerReady ? "pointer" : "not-allowed",
-              color: "oklch(0.72 0.05 265)",
-              background: "transparent",
-            }}
-            onMouseEnter={(e) => {
-              if (playerReady)
-                (e.currentTarget as HTMLElement).style.background =
-                  "oklch(0.96 0.005 265 / 10%)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "transparent";
-            }}
-          >
-            <ForwardIcon />
-          </button>
-        </div>
-
-        {/* Volume info — browsers cannot control device volume */}
-        <div className="px-5 py-3 flex items-center justify-center" style={bar}>
-          <span
-            className="text-xs text-center"
-            style={{ color: "oklch(0.58 0.01 265)" }}
-          >
-            🔊 Use your device volume buttons to adjust volume
-          </span>
-        </div>
+        {controls}
       </div>
     </div>
   );
