@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import {
   CheckCircle2,
+  Eye,
   LogOut,
   Music,
   Plus,
@@ -17,11 +18,13 @@ import {
   Share2,
   Trash2,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ImageCropper } from "../components/ImageCropper";
 import { SocialIcon } from "../components/SocialIcon";
+import { sendLiveNotification } from "../notificationService";
 import {
   addAlbum,
   addSocialProfile,
@@ -32,6 +35,7 @@ import {
   deleteSong,
   getLiveUrl,
   setLiveUrl,
+  subscribeToStats,
 } from "../services/firebaseService";
 import type { Album, SocialProfile, Song } from "../types";
 
@@ -163,6 +167,14 @@ export function AdminPage({
 
   const [liveSaved, setLiveSaved] = useState(false);
   const [shareLiveCopied, setShareLiveCopied] = useState(false);
+  const [stats, setStats] = useState({ followers: 0, views: 0 });
+  const FCM_SERVER_KEY =
+    "BEnC50uRTu8DeoGVGmVr4gskVA1PFcY2Z-DhGLUr-R9BBYaIvQNZ8xneWDHasT-koKUxG64R0TvXKIB8G9eOCq8";
+
+  useEffect(() => {
+    const unsub = subscribeToStats((s) => setStats(s));
+    return unsub;
+  }, []);
 
   // Social media profiles
   const [socialIcon, setSocialIcon] = useState("YouTube");
@@ -287,6 +299,8 @@ export function AdminPage({
       setSavedLiveUrl(url);
       setLiveSaved(true);
       setTimeout(() => setLiveSaved(false), 3000);
+      // Send push notification to followers
+      sendLiveNotification(FCM_SERVER_KEY);
     } catch (err: any) {
       setError(err?.message || "Failed to go live. Please try again.");
     }
@@ -506,6 +520,43 @@ export function AdminPage({
           </button>
         </div>
       )}
+
+      {/* Stats */}
+      <div
+        className="rounded-2xl p-5"
+        style={panelStyle}
+        data-ocid="admin.stats.panel"
+      >
+        <h2 className="text-base font-semibold text-foreground mb-4">Stats</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div
+            className="flex flex-col items-center gap-2 p-4 rounded-xl"
+            style={{
+              background: "oklch(var(--primary) / 0.10)",
+              border: "1px solid oklch(var(--primary) / 0.20)",
+            }}
+          >
+            <Users size={22} style={{ color: "var(--accent-color)" }} />
+            <p className="text-2xl font-bold text-foreground">
+              {stats.followers}
+            </p>
+            <p className="text-xs text-muted-foreground font-medium">
+              Followers
+            </p>
+          </div>
+          <div
+            className="flex flex-col items-center gap-2 p-4 rounded-xl"
+            style={{
+              background: "oklch(var(--primary) / 0.10)",
+              border: "1px solid oklch(var(--primary) / 0.20)",
+            }}
+          >
+            <Eye size={22} style={{ color: "var(--accent-color)" }} />
+            <p className="text-2xl font-bold text-foreground">{stats.views}</p>
+            <p className="text-xs text-muted-foreground font-medium">Views</p>
+          </div>
+        </div>
+      </div>
 
       {/* Live Stream URL */}
       <div

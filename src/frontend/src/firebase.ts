@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getMessaging, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDohco0U6giebeC-c7xc3zWRsMLbKKviNY",
@@ -13,3 +14,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+
+// Messaging may not be supported in all environments (e.g. Safari without permission)
+export let messaging: ReturnType<typeof getMessaging> | null = null;
+isSupported()
+  .then((supported) => {
+    if (supported) {
+      messaging = getMessaging(app);
+    }
+  })
+  .catch(() => {});

@@ -1,7 +1,23 @@
-import { Music2, Radio, Settings, User } from "lucide-react";
+import {
+  Music2,
+  Radio,
+  Settings,
+  User,
+  UserCheck,
+  UserPlus,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SocialIcon } from "../components/SocialIcon";
-import { subscribeToLiveUrl } from "../services/firebaseService";
+import {
+  subscribeToNotifications,
+  unsubscribeFromNotifications,
+} from "../notificationService";
+import {
+  decrementFollowers,
+  incrementFollowers,
+  incrementViews,
+  subscribeToLiveUrl,
+} from "../services/firebaseService";
 import type { SocialProfile, Song } from "../types";
 
 interface HomePageProps {
@@ -14,6 +30,10 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
   const [isLive, setIsLive] = useState(false);
   const [newSong, setNewSong] = useState<Song | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isFollowing, setIsFollowing] = useState(
+    () => localStorage.getItem("mr_follow_status") === "true",
+  );
+  const [followLoading, setFollowLoading] = useState(false);
 
   // Subscribe to live status via Firebase (real-time)
   useEffect(() => {
@@ -23,6 +43,7 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
     return unsub;
   }, []);
 
+  // New song notification
   useEffect(() => {
     const lastVisit = Number(localStorage.getItem("lastVisitTime") ?? 0);
     localStorage.setItem("lastVisitTime", String(Date.now()));
@@ -46,10 +67,40 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
     };
   }, [songs]);
 
+  // Views tracking: one view per device
+  useEffect(() => {
+    if (!localStorage.getItem("mr_viewed")) {
+      incrementViews();
+      localStorage.setItem("mr_viewed", "true");
+    }
+  }, []);
+
   const handleNewSongTap = (song: Song) => {
     localStorage.setItem("openSongId", song.id);
     setNewSong(null);
     onNavigate("/songs");
+  };
+
+  const handleFollowToggle = async () => {
+    if (followLoading) return;
+    setFollowLoading(true);
+    try {
+      if (isFollowing) {
+        localStorage.setItem("mr_follow_status", "false");
+        setIsFollowing(false);
+        await decrementFollowers();
+        await unsubscribeFromNotifications();
+      } else {
+        localStorage.setItem("mr_follow_status", "true");
+        setIsFollowing(true);
+        await incrementFollowers();
+        await subscribeToNotifications();
+      }
+    } catch (err) {
+      console.error("Follow toggle error:", err);
+    } finally {
+      setFollowLoading(false);
+    }
   };
 
   const showLive = isLive;
@@ -70,9 +121,46 @@ export function HomePage({ onNavigate, socialProfiles, songs }: HomePageProps) {
       <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight mb-2 text-center">
         Musical Rhythms
       </h1>
-      <p className="text-muted-foreground text-base font-medium mb-8 text-center">
+      <p className="text-muted-foreground text-base font-medium mb-5 text-center">
         Music by Soham Jagtap
       </p>
+
+      {/* Follow / Following button */}
+      <button
+        type="button"
+        onClick={handleFollowToggle}
+        disabled={followLoading}
+        data-ocid="home.follow.toggle"
+        className="mb-8 flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 hover:scale-[1.04] active:scale-[0.97] disabled:opacity-60"
+        style={
+          isFollowing
+            ? {
+                background: "oklch(var(--primary) / 0.18)",
+                border: "1.5px solid var(--accent-color)",
+                color: "var(--accent-color)",
+              }
+            : {
+                background: "var(--accent-color)",
+                border: "1.5px solid var(--accent-color)",
+                color: "white",
+              }
+        }
+      >
+        {followLoading ? (
+          <span
+            className="inline-block w-4 h-4 rounded-full border-2 animate-spin"
+            style={{
+              borderColor: "currentColor",
+              borderTopColor: "transparent",
+            }}
+          />
+        ) : isFollowing ? (
+          <UserCheck size={16} />
+        ) : (
+          <UserPlus size={16} />
+        )}
+        {isFollowing ? "Following" : "Follow"}
+      </button>
 
       {/* Live notification banner */}
       {showLive && (

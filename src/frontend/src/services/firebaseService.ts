@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   onSnapshot,
   query,
   setDoc,
@@ -134,4 +135,95 @@ export function subscribeToAll(
     unsubAlbums();
     unsubProfiles();
   };
+}
+
+// ── Stats (followers & views) ─────────────────────────────────────────────────
+
+const STATS_DOC = doc(db, "stats", "main");
+
+async function ensureStatsDoc(): Promise<void> {
+  const snap = await getDoc(STATS_DOC);
+  if (!snap.exists()) {
+    await setDoc(STATS_DOC, { followers: 0, views: 0 });
+  }
+}
+
+export async function incrementFollowers(): Promise<void> {
+  try {
+    await ensureStatsDoc();
+    await setDoc(STATS_DOC, { followers: increment(1) }, { merge: true });
+  } catch (err) {
+    console.error("incrementFollowers error:", err);
+  }
+}
+
+export async function decrementFollowers(): Promise<void> {
+  try {
+    await ensureStatsDoc();
+    await setDoc(STATS_DOC, { followers: increment(-1) }, { merge: true });
+  } catch (err) {
+    console.error("decrementFollowers error:", err);
+  }
+}
+
+export async function incrementViews(): Promise<void> {
+  try {
+    await ensureStatsDoc();
+    await setDoc(STATS_DOC, { views: increment(1) }, { merge: true });
+  } catch (err) {
+    console.error("incrementViews error:", err);
+  }
+}
+
+export function subscribeToStats(
+  callback: (stats: { followers: number; views: number }) => void,
+): () => void {
+  return onSnapshot(
+    STATS_DOC,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        callback({
+          followers: (data.followers as number) || 0,
+          views: (data.views as number) || 0,
+        });
+      } else {
+        callback({ followers: 0, views: 0 });
+      }
+    },
+    (err) => {
+      console.error("Stats subscription error:", err);
+    },
+  );
+}
+
+// ── Subscribers (FCM tokens) ──────────────────────────────────────────────────
+
+export async function addSubscriber(token: string): Promise<void> {
+  try {
+    await setDoc(doc(db, "subscribers", token), {
+      token,
+      createdAt: Date.now(),
+    });
+  } catch (err) {
+    console.error("addSubscriber error:", err);
+  }
+}
+
+export async function removeSubscriber(token: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "subscribers", token));
+  } catch (err) {
+    console.error("removeSubscriber error:", err);
+  }
+}
+
+export async function getSubscribers(): Promise<string[]> {
+  try {
+    const snap = await getDocs(collection(db, "subscribers"));
+    return snap.docs.map((d) => d.data().token as string).filter(Boolean);
+  } catch (err) {
+    console.error("getSubscribers error:", err);
+    return [];
+  }
 }

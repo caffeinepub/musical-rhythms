@@ -1,4 +1,12 @@
-import { ChevronLeft, Maximize, Minimize, Pause, Play } from "lucide-react";
+import {
+  ChevronLeft,
+  Maximize,
+  Minimize,
+  Pause,
+  Play,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Song } from "../types";
 
@@ -118,6 +126,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [volume, setVolume] = useState(100);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const playerDivRef = useRef<HTMLDivElement>(null);
@@ -188,11 +197,13 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         },
         events: {
           onReady: (event: any) => {
+            // Start muted (required for autoplay), then immediately unmute at full volume
+            event.target.playVideo();
             event.target.unMute();
             event.target.setVolume(100);
-            event.target.playVideo();
             setPlayerReady(true);
             setIsPlaying(true);
+            setVolume(100);
           },
           onStateChange: (event: any) => {
             if (event.data === 1) setIsPlaying(true);
@@ -211,7 +222,12 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
         script.src = "https://www.youtube.com/iframe_api";
         document.head.appendChild(script);
       }
-      window.onYouTubeIframeAPIReady = initPlayer;
+      // Chain callbacks in case API was already loading from a previous mount
+      const prevCallback = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (prevCallback) prevCallback();
+        initPlayer();
+      };
     }
 
     return () => {
@@ -254,9 +270,85 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
     if (isFullscreen) startHideTimer();
   };
 
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Number(e.target.value);
+    setVolume(val);
+    if (!playerRef.current) return;
+    if (val === 0) {
+      playerRef.current.mute();
+    } else {
+      playerRef.current.unMute();
+      playerRef.current.setVolume(val);
+    }
+    // Keep video playing when slider is moved
+    playerRef.current.playVideo();
+    if (isFullscreen) startHideTimer();
+  };
+
   const accentColor = "var(--accent-color, oklch(0.72 0.19 290))";
   const barBg = "oklch(0.17 0.010 265)";
   const barBorder = "1px solid oklch(0.96 0.005 265 / 8%)";
+
+  const volumeRow = (
+    <div
+      className="flex items-center gap-3 px-6 pb-4"
+      style={isFullscreen ? {} : { background: barBg }}
+    >
+      <button
+        type="button"
+        aria-label={volume === 0 ? "Unmute" : "Mute"}
+        onClick={() => {
+          const newVol = volume === 0 ? 80 : 0;
+          setVolume(newVol);
+          if (!playerRef.current) return;
+          if (newVol === 0) {
+            playerRef.current.mute();
+          } else {
+            playerRef.current.unMute();
+            playerRef.current.setVolume(newVol);
+          }
+          // Keep video playing after mute toggle
+          playerRef.current.playVideo();
+        }}
+        style={{
+          color: isFullscreen
+            ? "rgba(255,255,255,0.75)"
+            : "oklch(0.65 0.05 265)",
+          background: "transparent",
+          flexShrink: 0,
+        }}
+      >
+        {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+      </button>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={volume}
+        onChange={handleVolumeChange}
+        aria-label="Volume"
+        style={{
+          flex: 1,
+          height: 4,
+          accentColor: accentColor,
+          cursor: "pointer",
+        }}
+      />
+      <span
+        style={{
+          fontSize: 12,
+          minWidth: 28,
+          textAlign: "right",
+          color: isFullscreen
+            ? "rgba(255,255,255,0.6)"
+            : "oklch(0.55 0.03 265)",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {volume}%
+      </span>
+    </div>
+  );
 
   const controls = (
     <div
@@ -333,6 +425,7 @@ export function VideoPlayer({ song, onClose, dataSaver }: VideoPlayerProps) {
           <ForwardIcon />
         </button>
       </div>
+      {volumeRow}
     </div>
   );
 
