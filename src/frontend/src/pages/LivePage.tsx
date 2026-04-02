@@ -1,25 +1,100 @@
 import { Button } from "@/components/ui/button";
-import { Play, Share2, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { subscribeToLiveUrl } from "../services/firebaseService";
+import { Heart, Pin, Play, Send, Share2, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  addLiveComment,
+  clearAllLiveComments,
+  deleteLiveComment,
+  incrementLiveHearts,
+  pinLiveComment,
+  subscribeLiveComments,
+  subscribeLiveHearts,
+  subscribeToLiveUrl,
+} from "../services/firebaseService";
+import type { LiveComment } from "../services/firebaseService";
 
 const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 interface LivePageProps {
   dataSaver?: boolean;
+  isAdmin?: boolean;
 }
 
-export function LivePage({ dataSaver }: LivePageProps) {
+interface FloatingHeart {
+  id: number;
+  x: number;
+}
+
+export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
   const [liveUrl, setLiveUrl] = useState<string>("");
   const [joined, setJoined] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Comments
+  const [comments, setComments] = useState<LiveComment[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [authorName, setAuthorName] = useState(
+    () => localStorage.getItem("mr_display_name") || "",
+  );
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [pendingComment, setPendingComment] = useState("");
+  const commentListRef = useRef<HTMLDivElement>(null);
+
+  // Hearts
+  const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
+  const lastHeartCountRef = useRef(0);
+  const heartIdRef = useRef(0);
+
+  // Track previous isLive to detect transition
+  const wasLiveRef = useRef(false);
 
   useEffect(() => {
     const unsub = subscribeToLiveUrl((url) => setLiveUrl(url));
     return unsub;
   }, []);
 
-  // Extract YouTube video ID from any YouTube URL
+  useEffect(() => {
+    const unsub = subscribeLiveComments((c) => setComments(c));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeLiveHearts((_count, lastAt) => {
+      // Only trigger animation if someone just sent a heart (lastAt changed)
+      if (lastAt > 0 && lastAt !== lastHeartCountRef.current) {
+        lastHeartCountRef.current = lastAt;
+        const x = 30 + Math.random() * 40;
+        const id = ++heartIdRef.current;
+        setFloatingHearts((prev) => [...prev, { id, x }]);
+        setTimeout(() => {
+          setFloatingHearts((prev) => prev.filter((h) => h.id !== id));
+        }, 2000);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Auto-clear comments when live ends
+  const isLive = Boolean(liveUrl);
+  useEffect(() => {
+    if (wasLiveRef.current && !isLive) {
+      // live just ended — clear all comments
+      clearAllLiveComments().catch(console.error);
+    }
+    wasLiveRef.current = isLive;
+  }, [isLive]);
+
+  // Auto-scroll comments to bottom
+  const commentCountRef = useRef(0);
+  const scrollCount = comments.length;
+  commentCountRef.current = scrollCount;
+  useEffect(() => {
+    if (commentListRef.current) {
+      commentListRef.current.scrollTop = commentListRef.current.scrollHeight;
+    }
+  });
+
   const getYouTubeVideoId = (url: string): string | null => {
     if (!url) return null;
     const watchMatch = url.match(/[?&]v=([^&]+)/);
@@ -31,7 +106,6 @@ export function LivePage({ dataSaver }: LivePageProps) {
     return null;
   };
 
-  // Convert YouTube watch URL to embed URL
   const getEmbedUrl = (url: string): string => {
     if (!url) return "";
     const qualityParam = dataSaver ? "&vq=large" : "";
@@ -42,7 +116,6 @@ export function LivePage({ dataSaver }: LivePageProps) {
   };
 
   const embedUrl = getEmbedUrl(liveUrl);
-  const isLive = Boolean(liveUrl);
   const videoId = getYouTubeVideoId(liveUrl);
   const thumbnailUrl = videoId
     ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
@@ -58,9 +131,7 @@ export function LivePage({ dataSaver }: LivePageProps) {
           text: "Join Soham Jagtap's live session on Musical Rhythms!",
           url: shareLink,
         })
-        .catch(() => {
-          /* user dismissed */
-        });
+        .catch(() => {});
     } else {
       navigator.clipboard.writeText(shareLink).then(() => {
         setCopied(true);
@@ -69,10 +140,75 @@ export function LivePage({ dataSaver }: LivePageProps) {
     }
   };
 
+  const submitComment = async (name: string, text: string) => {
+    if (!text.trim() || !name.trim()) return;
+    try {
+      await addLiveComment({
+        authorName: isAdmin ? "Soham (Creator)" : name.trim(),
+        text: text.trim(),
+        timestamp: Date.now(),
+        isAdmin,
+        isPinned: false,
+      });
+      setCommentText("");
+    } catch (err) {
+      console.error("Comment error:", err);
+    }
+  };
+
+  const handleSendComment = () => {
+    if (!commentText.trim()) return;
+    if (!isAdmin && !authorName) {
+      setPendingComment(commentText);
+      setShowNamePrompt(true);
+      return;
+    }
+    submitComment(isAdmin ? "Soham (Creator)" : authorName, commentText);
+  };
+
+  const handleNameConfirm = () => {
+    if (!nameInput.trim()) return;
+    const name = nameInput.trim();
+    localStorage.setItem("mr_display_name", name);
+    setAuthorName(name);
+    setShowNamePrompt(false);
+    setNameInput("");
+    submitComment(name, pendingComment);
+    setPendingComment("");
+  };
+
+  const handleHeart = async () => {
+    // Local animation
+    const x = 30 + Math.random() * 40;
+    const id = ++heartIdRef.current;
+    setFloatingHearts((prev) => [...prev, { id, x }]);
+    setTimeout(() => {
+      setFloatingHearts((prev) => prev.filter((h) => h.id !== id));
+    }, 2000);
+    await incrementLiveHearts();
+  };
+
+  const handleDeleteComment = async (id: string) => {
+    try {
+      await deleteLiveComment(id);
+    } catch (err) {
+      console.error("Delete comment error:", err);
+    }
+  };
+
+  const handlePinComment = async (id: string, pinned: boolean) => {
+    try {
+      await pinLiveComment(id, !pinned);
+    } catch (err) {
+      console.error("Pin comment error:", err);
+    }
+  };
+
+  const pinnedComment = comments.find((c) => c.isPinned);
+  const unpinnedComments = comments.filter((c) => !c.isPinned);
+
   const renderStream = () => {
     if (!joined || !embedUrl) return null;
-
-    // iOS fallback — show thumbnail + open in YouTube
     if (isIOS && videoId) {
       return (
         <div className="relative" style={{ paddingBottom: "56.25%" }}>
@@ -103,7 +239,6 @@ export function LivePage({ dataSaver }: LivePageProps) {
         </div>
       );
     }
-
     return (
       <div className="relative" style={{ paddingBottom: "56.25%" }}>
         <iframe
@@ -120,7 +255,7 @@ export function LivePage({ dataSaver }: LivePageProps) {
 
   return (
     <div className="px-4 sm:px-6 py-6 animate-fade-in">
-      {/* Banner */}
+      {/* Live banner */}
       <div
         className="flex items-center gap-3 px-4 py-3 rounded-xl mb-6 text-sm font-semibold"
         style={{
@@ -149,7 +284,7 @@ export function LivePage({ dataSaver }: LivePageProps) {
 
       {/* Stream area */}
       <div
-        className="rounded-2xl overflow-hidden"
+        className="rounded-2xl overflow-hidden relative"
         style={{
           background: "oklch(var(--card))",
           border: "1px solid oklch(var(--border))",
@@ -157,6 +292,26 @@ export function LivePage({ dataSaver }: LivePageProps) {
         }}
         data-ocid="live.panel"
       >
+        {/* Floating hearts overlay */}
+        <div
+          className="absolute inset-0 pointer-events-none overflow-hidden"
+          style={{ zIndex: 10 }}
+        >
+          {floatingHearts.map((h) => (
+            <div
+              key={h.id}
+              className="absolute bottom-16 animate-bounce"
+              style={{
+                left: `${h.x}%`,
+                animation: "floatUp 2s ease-out forwards",
+                fontSize: "1.8rem",
+              }}
+            >
+              ❤️
+            </div>
+          ))}
+        </div>
+
         {joined && embedUrl ? (
           renderStream()
         ) : (
@@ -230,13 +385,13 @@ export function LivePage({ dataSaver }: LivePageProps) {
         )}
       </div>
 
-      {/* Share Live button — only shown when live is active */}
+      {/* Share + Heart row — only shown when live */}
       {isLive && (
-        <div className="mt-5 flex justify-center">
+        <div className="mt-4 flex items-center gap-3 justify-center flex-wrap">
           <Button
             onClick={handleShareLive}
             variant="outline"
-            className="gap-2 px-6"
+            className="gap-2 px-5"
             style={{
               border: "1px solid oklch(0.63 0.22 25 / 0.4)",
               color: copied ? "oklch(0.72 0.18 145)" : "oklch(0.75 0.18 25)",
@@ -249,8 +404,288 @@ export function LivePage({ dataSaver }: LivePageProps) {
             <Share2 size={14} />
             {copied ? "Link Copied! ✓" : "Share Live"}
           </Button>
+
+          <button
+            type="button"
+            onClick={handleHeart}
+            className="flex items-center gap-2 px-5 py-2 rounded-full font-semibold text-sm transition-all active:scale-90 hover:scale-105"
+            style={{
+              background: "oklch(0.63 0.22 0 / 0.15)",
+              border: "1px solid oklch(0.63 0.22 0 / 0.35)",
+              color: "oklch(0.75 0.18 0)",
+            }}
+            data-ocid="live.heart_button"
+          >
+            <Heart size={16} fill="currentColor" />
+            Send Heart
+          </button>
         </div>
       )}
+
+      {/* Comments section — only shown when live */}
+      {isLive && (
+        <div
+          className="mt-6 rounded-2xl overflow-hidden"
+          style={{
+            background: "oklch(var(--card))",
+            border: "1px solid oklch(var(--border))",
+          }}
+          data-ocid="live.comments"
+        >
+          <div
+            className="px-4 py-3 border-b"
+            style={{ borderColor: "oklch(var(--border))" }}
+          >
+            <p className="text-sm font-semibold text-foreground">Live Chat</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {comments.length} comment{comments.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+
+          {/* Pinned comment */}
+          {pinnedComment && (
+            <div
+              className="px-4 py-3 border-b"
+              style={{
+                borderColor: "oklch(var(--border))",
+                background: "oklch(var(--primary) / 0.08)",
+              }}
+            >
+              <div className="flex items-start gap-2">
+                <Pin
+                  size={13}
+                  style={{
+                    color: "var(--accent-color)",
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}
+                />
+                <div className="flex-1 min-w-0">
+                  <span
+                    className="text-xs font-bold"
+                    style={{ color: "var(--accent-color)" }}
+                  >
+                    {pinnedComment.isAdmin
+                      ? "Soham (Creator)"
+                      : pinnedComment.authorName}
+                    {pinnedComment.isAdmin && (
+                      <span
+                        className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]"
+                        style={{
+                          background: "oklch(0.63 0.22 25 / 0.18)",
+                          color: "oklch(0.75 0.18 25)",
+                        }}
+                      >
+                        Creator
+                      </span>
+                    )}
+                  </span>
+                  <p className="text-xs text-foreground mt-0.5">
+                    {pinnedComment.text}
+                  </p>
+                </div>
+                {isAdmin && (
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handlePinComment(pinnedComment.id, true)}
+                      className="p-1 rounded opacity-60 hover:opacity-100 transition-opacity"
+                      title="Unpin"
+                    >
+                      <X size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComment(pinnedComment.id)}
+                      className="p-1 rounded opacity-60 hover:opacity-100 transition-opacity"
+                      title="Delete"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Comment list */}
+          <div
+            ref={commentListRef}
+            className="px-4 py-3 space-y-3 overflow-y-auto"
+            style={{ maxHeight: "280px" }}
+          >
+            {unpinnedComments.length === 0 && !pinnedComment && (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                No comments yet. Be the first to say something!
+              </p>
+            )}
+            {unpinnedComments.map((comment) => (
+              <div key={comment.id} className="flex items-start gap-2">
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold"
+                  style={{
+                    background: comment.isAdmin
+                      ? "oklch(0.63 0.22 25 / 0.20)"
+                      : "oklch(var(--primary) / 0.15)",
+                    color: comment.isAdmin
+                      ? "oklch(0.75 0.18 25)"
+                      : "var(--accent-color)",
+                  }}
+                >
+                  {comment.isAdmin
+                    ? "S"
+                    : comment.authorName.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className="text-xs font-semibold"
+                      style={{
+                        color: comment.isAdmin
+                          ? "oklch(0.75 0.18 25)"
+                          : "var(--accent-color)",
+                      }}
+                    >
+                      {comment.isAdmin ? "Soham (Creator)" : comment.authorName}
+                    </span>
+                    {comment.isAdmin && (
+                      <span
+                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{
+                          background: "oklch(0.63 0.22 25 / 0.18)",
+                          color: "oklch(0.75 0.18 25)",
+                        }}
+                      >
+                        Creator
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(comment.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-foreground mt-0.5 break-words">
+                    {comment.text}
+                  </p>
+                </div>
+                {isAdmin && (
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handlePinComment(comment.id, comment.isPinned)
+                      }
+                      className="p-1 rounded opacity-50 hover:opacity-100 transition-opacity"
+                      title="Pin comment"
+                    >
+                      <Pin size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComment(comment.id)}
+                      className="p-1 rounded opacity-50 hover:opacity-100 transition-opacity text-red-400"
+                      title="Delete comment"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Comment input */}
+          <div
+            className="px-4 py-3 border-t flex gap-2"
+            style={{ borderColor: "oklch(var(--border))" }}
+          >
+            <input
+              type="text"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSendComment()}
+              placeholder={
+                isAdmin ? "Comment as Soham..." : "Write a comment..."
+              }
+              className="flex-1 bg-muted rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-accent-color"
+              style={{ minWidth: 0 }}
+              data-ocid="live.comment_input"
+            />
+            <button
+              type="button"
+              onClick={handleSendComment}
+              disabled={!commentText.trim()}
+              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-opacity"
+              style={{ background: "var(--accent-color)" }}
+              data-ocid="live.send_comment_button"
+            >
+              <Send size={15} color="white" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Name prompt modal */}
+      {showNamePrompt && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 px-4"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6"
+            style={{
+              background: "oklch(var(--card))",
+              border: "1px solid oklch(var(--border))",
+            }}
+          >
+            <h3 className="text-base font-bold text-foreground mb-1">
+              What's your name?
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              This name will appear with your comments.
+            </p>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleNameConfirm()}
+              placeholder="Your name"
+              className="w-full bg-muted rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNamePrompt(false);
+                  setPendingComment("");
+                }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-muted-foreground"
+                style={{ background: "oklch(var(--muted))" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleNameConfirm}
+                disabled={!nameInput.trim()}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: "var(--accent-color)" }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes floatUp {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(-120px) scale(1.5); }
+        }
+      `}</style>
     </div>
   );
 }

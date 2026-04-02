@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -6,8 +7,10 @@ import {
   getDocs,
   increment,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { Album, SocialProfile, Song } from "../types";
@@ -226,4 +229,90 @@ export async function getSubscribers(): Promise<string[]> {
     console.error("getSubscribers error:", err);
     return [];
   }
+}
+
+// ── Live Comments ─────────────────────────────────────────────────────────────
+
+export interface LiveComment {
+  id: string;
+  authorName: string;
+  text: string;
+  timestamp: number;
+  isAdmin: boolean;
+  isPinned: boolean;
+}
+
+export async function addLiveComment(
+  comment: Omit<LiveComment, "id">,
+): Promise<void> {
+  await addDoc(collection(db, "liveComments"), comment);
+}
+
+export async function deleteLiveComment(id: string): Promise<void> {
+  await deleteDoc(doc(db, "liveComments", id));
+}
+
+export async function pinLiveComment(
+  id: string,
+  pinned: boolean,
+): Promise<void> {
+  await updateDoc(doc(db, "liveComments", id), { isPinned: pinned });
+}
+
+export async function clearAllLiveComments(): Promise<void> {
+  const snap = await getDocs(collection(db, "liveComments"));
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+}
+
+export function subscribeLiveComments(
+  callback: (comments: LiveComment[]) => void,
+): () => void {
+  const q = query(collection(db, "liveComments"), orderBy("timestamp", "asc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const comments = snap.docs.map(
+        (d) => ({ ...d.data(), id: d.id }) as LiveComment,
+      );
+      callback(comments);
+    },
+    (err) => {
+      console.error("Live comments subscription error:", err);
+    },
+  );
+}
+
+// ── Live Hearts ───────────────────────────────────────────────────────────────
+
+const HEARTS_DOC = doc(db, "config", "liveHearts");
+
+export async function incrementLiveHearts(): Promise<void> {
+  try {
+    await setDoc(
+      HEARTS_DOC,
+      { count: increment(1), lastAt: Date.now() },
+      { merge: true },
+    );
+  } catch (err) {
+    console.error("incrementLiveHearts error:", err);
+  }
+}
+
+export function subscribeLiveHearts(
+  callback: (count: number, lastAt: number) => void,
+): () => void {
+  return onSnapshot(
+    HEARTS_DOC,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        callback((data.count as number) || 0, (data.lastAt as number) || 0);
+      } else {
+        callback(0, 0);
+      }
+    },
+    (err) => {
+      console.error("Hearts subscription error:", err);
+    },
+  );
 }
