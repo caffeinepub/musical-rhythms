@@ -30,12 +30,15 @@ import {
   addAlbum,
   addSocialProfile,
   addSong,
+  clearAllLiveComments,
   clearLiveUrl,
   deleteAlbum,
   deleteSocialProfile,
   deleteSong,
   getLiveUrl,
+  resetLiveHearts,
   setLiveUrl,
+  subscribeLiveComments,
   subscribeToStats,
 } from "../services/firebaseService";
 import type { Album, SocialProfile, Song } from "../types";
@@ -197,16 +200,92 @@ export function AdminPage({
 
   const handleStartRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+      // Capture the full screen/tab including comments overlay
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 30 } as MediaTrackConstraints,
         audio: true,
       });
+
+      // Create canvas to composite screen + comments overlay
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280;
+      canvas.height = 720;
+      const ctx = canvas.getContext("2d")!;
+
+      // Create a video element to display the screen stream
+      const screenVideo = document.createElement("video");
+      screenVideo.srcObject = screenStream;
+      screenVideo.muted = true;
+      await screenVideo.play();
+
+      let animFrameId: number;
+      const currentCommentsRef = {
+        value: [] as { authorName: string; text: string; isAdmin: boolean }[],
+      };
+
+      // Subscribe to comments to overlay them on canvas
+      const unsubComments = subscribeLiveComments((c) => {
+        currentCommentsRef.value = c.slice(-8);
+      });
+
+      const drawFrame = () => {
+        // Draw screen capture
+        ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
+
+        // Draw comments overlay at bottom-left (like YouTube Live)
+        const comments = currentCommentsRef.value;
+        if (comments.length > 0) {
+          const startY = canvas.height - 40 - comments.length * 36;
+          comments.forEach((comment, i) => {
+            const y = startY + i * 36;
+            // Semi-transparent background pill
+            ctx.save();
+            ctx.globalAlpha = 0.65;
+            ctx.fillStyle = "#000000";
+            ctx.beginPath();
+            (ctx as any).roundRect(16, y - 20, 500, 30, 8);
+            ctx.fill();
+            ctx.restore();
+            // Author name
+            ctx.fillStyle = comment.isAdmin ? "#ff9944" : "#8ecfff";
+            ctx.font = "bold 14px Arial";
+            ctx.fillText(
+              comment.isAdmin ? "Musical Rhythms (Admin)" : comment.authorName,
+              24,
+              y - 2,
+            );
+            // Comment text
+            const nameWidth = ctx.measureText(
+              comment.isAdmin ? "Musical Rhythms (Admin)" : comment.authorName,
+            ).width;
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "14px Arial";
+            ctx.fillText(`: ${comment.text}`, 24 + nameWidth, y - 2);
+          });
+        }
+
+        animFrameId = requestAnimationFrame(drawFrame);
+      };
+      drawFrame();
+
+      // Combine canvas stream with audio from screen
+      const canvasStream = canvas.captureStream(30);
+      const audioTracks = screenStream.getAudioTracks();
+      for (const t of audioTracks) canvasStream.addTrack(t);
+
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(canvasStream, {
+        mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+          ? "video/webm;codecs=vp9"
+          : "video/webm",
+      });
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
       recorder.onstop = () => {
+        cancelAnimationFrame(animFrameId);
+        unsubComments();
+        for (const t of screenStream.getTracks()) t.stop();
         const blob = new Blob(chunks, { type: "video/webm" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -218,6 +297,7 @@ export function AdminPage({
         setRecordingTime(0);
         if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       };
+
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsRecording(true);
@@ -226,7 +306,9 @@ export function AdminPage({
         () => setRecordingTime((t) => t + 1),
         1000,
       );
-      stream.getVideoTracks()[0].onended = () => {
+
+      // Stop when screen share ends
+      screenStream.getVideoTracks()[0].onended = () => {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
         }
@@ -370,6 +452,8 @@ export function AdminPage({
     setError(null);
     try {
       await clearLiveUrl();
+      await clearAllLiveComments();
+      await resetLiveHearts();
       setSavedLiveUrl("");
       setLiveUrlState("");
       setLiveSaved(false);

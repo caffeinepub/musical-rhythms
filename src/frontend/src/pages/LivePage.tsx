@@ -7,6 +7,7 @@ import {
   deleteLiveComment,
   incrementLiveHearts,
   pinLiveComment,
+  resetLiveHearts,
   subscribeLiveComments,
   subscribeLiveHearts,
   subscribeToLiveUrl,
@@ -75,12 +76,12 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
     return unsub;
   }, []);
 
-  // Auto-clear comments when live ends
+  // Auto-clear comments and hearts when live ends
   const isLive = Boolean(liveUrl);
   useEffect(() => {
     if (wasLiveRef.current && !isLive) {
-      // live just ended — clear all comments
       clearAllLiveComments().catch(console.error);
+      resetLiveHearts().catch(console.error);
     }
     wasLiveRef.current = isLive;
   }, [isLive]);
@@ -144,7 +145,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
     if (!text.trim() || !name.trim()) return;
     try {
       await addLiveComment({
-        authorName: isAdmin ? "Soham (Creator)" : name.trim(),
+        authorName: isAdmin ? "Musical Rhythms (Admin)" : name.trim(),
         text: text.trim(),
         timestamp: Date.now(),
         isAdmin,
@@ -163,7 +164,10 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
       setShowNamePrompt(true);
       return;
     }
-    submitComment(isAdmin ? "Soham (Creator)" : authorName, commentText);
+    submitComment(
+      isAdmin ? "Musical Rhythms (Admin)" : authorName,
+      commentText,
+    );
   };
 
   const handleNameConfirm = () => {
@@ -417,7 +421,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
             data-ocid="live.heart_button"
           >
             <Heart size={16} fill="currentColor" />
-            Send Heart
+            Like
           </button>
         </div>
       )}
@@ -466,7 +470,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                     style={{ color: "var(--accent-color)" }}
                   >
                     {pinnedComment.isAdmin
-                      ? "Soham (Creator)"
+                      ? "Musical Rhythms (Admin)"
                       : pinnedComment.authorName}
                     {pinnedComment.isAdmin && (
                       <span
@@ -476,7 +480,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                           color: "oklch(0.75 0.18 25)",
                         }}
                       >
-                        Creator
+                        Admin
                       </span>
                     )}
                   </span>
@@ -546,7 +550,9 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                           : "var(--accent-color)",
                       }}
                     >
-                      {comment.isAdmin ? "Soham (Creator)" : comment.authorName}
+                      {comment.isAdmin
+                        ? "Musical Rhythms (Admin)"
+                        : comment.authorName}
                     </span>
                     {comment.isAdmin && (
                       <span
@@ -556,7 +562,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                           color: "oklch(0.75 0.18 25)",
                         }}
                       >
-                        Creator
+                        Admin
                       </span>
                     )}
                     <span className="text-[10px] text-muted-foreground">
@@ -607,7 +613,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
               onChange={(e) => setCommentText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendComment()}
               placeholder={
-                isAdmin ? "Comment as Soham..." : "Write a comment..."
+                isAdmin ? "Comment as Musical Rhythms..." : "Write a comment..."
               }
               className="flex-1 bg-muted rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-accent-color"
               style={{ minWidth: 0 }}

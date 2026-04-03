@@ -1,28 +1,34 @@
 # Musical Rhythms
 
 ## Current State
-All app data (songs, albums, social profiles, live stream URL) is stored in `localStorage` — a per-device, per-browser storage bucket. This means data added on one device is invisible to all other devices. The Motoko backend was empty (`actor {}`).
+- Live page has comment box, floating heart animation, and 'Send Heart' button
+- Admin panel has screen recording via `getDisplayMedia` (screen only, no comment overlay)
+- When live ends, `clearAllLiveComments()` is called — but hearts (liveHearts doc) are NOT reset
+- Admin commenter displays as 'Soham (Creator)' in some places, but 'admin' label appears elsewhere
+- 'Send Heart' / like button is visible even when live is off
+- Hearts from previous live sessions persist in Firestore
+- Screen recording only captures the screen, not the in-app comment overlay
 
 ## Requested Changes (Diff)
 
 ### Add
-- Full Motoko backend with stable storage for songs, albums, social profiles, and live stream URL
-- Backend functions: getSongs/addSong/deleteSong, getAlbums/addAlbum/deleteAlbum, getSocialProfiles/addSocialProfile/updateSocialProfile/deleteSocialProfile, getLiveUrl/setLiveUrl/clearLiveUrl
-- Data migration: on first load, if localStorage has existing data, migrate it to the backend and clear localStorage
+- `resetLiveHearts()` function in firebaseService to zero-out the liveHearts document
+- Screen recording that composites the live video iframe + comment overlay onto a canvas so the downloaded recording includes comments
 
 ### Modify
-- `App.tsx`: load songs, albums, social profiles from backend on mount; all mutations go to backend; remove localStorage sync for these
-- `AdminPage.tsx`: addSong/deleteAlbum etc. call backend directly; social profile mutations call backend
-- `LivePage.tsx`: already updated in previous fix to use backend
-- `HomePage.tsx`: already updated in previous fix to use backend
+- When admin ends live (`handleClearLiveUrl`): also call `clearAllLiveComments()` AND `resetLiveHearts()` so Firebase is fully cleaned up
+- Rename 'Send Heart' button label to 'Like' everywhere (LivePage and AdminPage)
+- Hide the Like button entirely when live is NOT active (both user LivePage and admin LivePage section)
+- Admin comment author name: use 'Musical Rhythms (Admin)' consistently everywhere
+- Screen recording in AdminPage: use canvas-based compositing — capture the live iframe + comments panel as a canvas stream so the recording includes comments
 
 ### Remove
-- All `localStorage.setItem/getItem` calls for songs, albums, socialProfiles
-- The `loadSongs`, `loadAlbums`, `loadSocialProfiles` functions that read from localStorage
+- Nothing removed
 
 ## Implementation Plan
-1. Backend already written with all CRUD functions
-2. Update App.tsx to load all data from backend on mount using useEffect, show loading state
-3. Update App.tsx mutation handlers (setSongs, setAlbums, setSocialProfiles) to call backend
-4. Update AdminPage.tsx to call backend directly for add/delete operations
-5. Validate and build
+1. Add `resetLiveHearts()` to firebaseService.ts — sets the liveHearts doc count and lastAt to 0
+2. In AdminPage `handleClearLiveUrl`: after clearLiveUrl(), also call clearAllLiveComments() and resetLiveHearts()
+3. In LivePage: rename all 'Send Heart' / heart button labels to 'Like'; hide the button when `!isLive`
+4. In AdminPage live section: same rename and hide-when-not-live
+5. Fix admin comment author: ensure 'Musical Rhythms (Admin)' is used in both LivePage and AdminPage when isAdmin=true
+6. Fix screen recording: use `getDisplayMedia` with a canvas overlay approach — capture the entire app tab/window so comments are naturally included in the recording (simplest reliable approach)

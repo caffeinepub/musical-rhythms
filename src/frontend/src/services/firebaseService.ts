@@ -316,3 +316,11 @@ export function subscribeLiveHearts(
     },
   );
 }
+
+export async function resetLiveHearts(): Promise<void> {
+  try {
+    await setDoc(HEARTS_DOC, { count: 0, lastAt: 0 });
+  } catch (err) {
+    console.error("resetLiveHearts error:", err);
+  }
+}
