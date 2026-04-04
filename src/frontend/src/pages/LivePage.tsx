@@ -50,6 +50,10 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
   // Track previous isLive to detect transition
   const wasLiveRef = useRef(false);
 
+  // Live elapsed timer
+  const [liveElapsed, setLiveElapsed] = useState(0);
+  const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     const unsub = subscribeToLiveUrl((url) => setLiveUrl(url));
     return unsub;
@@ -86,6 +90,23 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
     wasLiveRef.current = isLive;
   }, [isLive]);
 
+  // Start/stop elapsed timer when live status changes
+  useEffect(() => {
+    if (isLive) {
+      setLiveElapsed(0);
+      liveTimerRef.current = setInterval(
+        () => setLiveElapsed((s) => s + 1),
+        1000,
+      );
+    } else {
+      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+      setLiveElapsed(0);
+    }
+    return () => {
+      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+    };
+  }, [isLive]);
+
   // Auto-scroll comments to bottom
   const commentCountRef = useRef(0);
   const scrollCount = comments.length;
@@ -95,6 +116,17 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
       commentListRef.current.scrollTop = commentListRef.current.scrollHeight;
     }
   });
+
+  const formatLiveTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const hh = String(h).padStart(2, "0");
+    const mm = String(m).padStart(2, "0");
+    const ss = String(sec).padStart(2, "0");
+    if (h > 0) return `${hh}:${mm}:${ss}`;
+    return `${mm}:${ss}`;
+  };
 
   const getYouTubeVideoId = (url: string): string | null => {
     if (!url) return null;
@@ -145,7 +177,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
     if (!text.trim() || !name.trim()) return;
     try {
       await addLiveComment({
-        authorName: isAdmin ? "Musical Rhythms (Admin)" : name.trim(),
+        authorName: isAdmin ? "Sohan Jagtap (Admin)" : name.trim(),
         text: text.trim(),
         timestamp: Date.now(),
         isAdmin,
@@ -164,10 +196,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
       setShowNamePrompt(true);
       return;
     }
-    submitComment(
-      isAdmin ? "Musical Rhythms (Admin)" : authorName,
-      commentText,
-    );
+    submitComment(isAdmin ? "Sohan Jagtap (Admin)" : authorName, commentText);
   };
 
   const handleNameConfirm = () => {
@@ -296,6 +325,26 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
         }}
         data-ocid="live.panel"
       >
+        {/* Live timer overlay */}
+        {isLive && (
+          <div
+            className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold z-20"
+            style={{
+              background: "rgba(220,38,38,0.92)",
+              color: "white",
+              backdropFilter: "blur(4px)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full animate-pulse"
+              style={{ background: "white", flexShrink: 0 }}
+            />
+            {"LIVE  "}
+            {formatLiveTime(liveElapsed)}
+          </div>
+        )}
+
         {/* Floating hearts overlay */}
         <div
           className="absolute inset-0 pointer-events-none overflow-hidden"
@@ -470,7 +519,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                     style={{ color: "var(--accent-color)" }}
                   >
                     {pinnedComment.isAdmin
-                      ? "Musical Rhythms (Admin)"
+                      ? "Sohan Jagtap (Admin)"
                       : pinnedComment.authorName}
                     {pinnedComment.isAdmin && (
                       <span
@@ -526,7 +575,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
             {unpinnedComments.map((comment) => (
               <div key={comment.id} className="flex items-start gap-2">
                 <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold"
+                  className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold overflow-hidden"
                   style={{
                     background: comment.isAdmin
                       ? "oklch(0.63 0.22 25 / 0.20)"
@@ -536,9 +585,15 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                       : "var(--accent-color)",
                   }}
                 >
-                  {comment.isAdmin
-                    ? "S"
-                    : comment.authorName.charAt(0).toUpperCase()}
+                  {comment.isAdmin ? (
+                    <img
+                      src="/assets/unnamed-019d39d0-d234-7035-b935-2f8115eca61d.png"
+                      alt="MR"
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  ) : (
+                    comment.authorName.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -551,7 +606,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                       }}
                     >
                       {comment.isAdmin
-                        ? "Musical Rhythms (Admin)"
+                        ? "Sohan Jagtap (Admin)"
                         : comment.authorName}
                     </span>
                     {comment.isAdmin && (
@@ -613,7 +668,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
               onChange={(e) => setCommentText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendComment()}
               placeholder={
-                isAdmin ? "Comment as Musical Rhythms..." : "Write a comment..."
+                isAdmin ? "Comment as Sohan Jagtap..." : "Write a comment..."
               }
               className="flex-1 bg-muted rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-accent-color"
               style={{ minWidth: 0 }}

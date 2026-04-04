@@ -1,34 +1,32 @@
 # Musical Rhythms
 
 ## Current State
-- Live page has comment box, floating heart animation, and 'Send Heart' button
-- Admin panel has screen recording via `getDisplayMedia` (screen only, no comment overlay)
-- When live ends, `clearAllLiveComments()` is called — but hearts (liveHearts doc) are NOT reset
-- Admin commenter displays as 'Soham (Creator)' in some places, but 'admin' label appears elsewhere
-- 'Send Heart' / like button is visible even when live is off
-- Hearts from previous live sessions persist in Firestore
-- Screen recording only captures the screen, not the in-app comment overlay
+- LivePage.tsx: Shows live stream embed, comments, hearts/likes. Admin comments show 'S' avatar and label 'Musical Rhythms (Admin)'. No live duration timer.
+- AdminPage.tsx: Has a recording panel with handleStartRecording (screen capture via getDisplayMedia + canvas composite with comments). Recording UI shows Start Recording / Stop & Download buttons. Currently the code may fail silently because getDisplayMedia requires user gesture and browser support varies; errors are caught silently.
+- Admin comments in LivePage use hardcoded 'S' as the avatar letter, and label is 'Musical Rhythms (Admin)'.
 
 ## Requested Changes (Diff)
 
 ### Add
-- `resetLiveHearts()` function in firebaseService to zero-out the liveHearts document
-- Screen recording that composites the live video iframe + comment overlay onto a canvas so the downloaded recording includes comments
+- Live duration timer at top of the live stream panel (both LivePage and Admin live tab), counting up from 00:00 like Instagram/YouTube Live. Timer starts when live becomes active and the user joins, shown as a red LIVE badge + elapsed time e.g. "LIVE  00:14:32".
+- Timer in both LivePage (viewer side) and AdminPage (admin live preview section).
 
 ### Modify
-- When admin ends live (`handleClearLiveUrl`): also call `clearAllLiveComments()` AND `resetLiveHearts()` so Firebase is fully cleaned up
-- Rename 'Send Heart' button label to 'Like' everywhere (LivePage and AdminPage)
-- Hide the Like button entirely when live is NOT active (both user LivePage and admin LivePage section)
-- Admin comment author name: use 'Musical Rhythms (Admin)' consistently everywhere
-- Screen recording in AdminPage: use canvas-based compositing — capture the live iframe + comments panel as a canvas stream so the recording includes comments
+- Admin comment avatar: replace the hardcoded 'S' letter with the MR logo image (`/assets/unnamed-019d39d0-d234-7035-b935-2f8115eca61d.png`) in a circle for admin comments in LivePage.
+- Admin comment display name: change from 'Musical Rhythms (Admin)' to 'Sohan Jagtap (Admin)' everywhere it appears in LivePage and AdminPage (submitComment, comment rendering, pinned comment rendering, input placeholder).
+- Recording fix in AdminPage: the current canvas-based composite approach is complex and may fail. Simplify to direct MediaRecorder on the screen stream (getDisplayMedia). Show two clear buttons: "Start Recording" (before recording) and when recording is active show only "Stop & Download Recording" button. Download the .webm file to the user's Downloads folder automatically on stop.
 
 ### Remove
-- Nothing removed
+- Nothing removed.
 
 ## Implementation Plan
-1. Add `resetLiveHearts()` to firebaseService.ts — sets the liveHearts doc count and lastAt to 0
-2. In AdminPage `handleClearLiveUrl`: after clearLiveUrl(), also call clearAllLiveComments() and resetLiveHearts()
-3. In LivePage: rename all 'Send Heart' / heart button labels to 'Like'; hide the button when `!isLive`
-4. In AdminPage live section: same rename and hide-when-not-live
-5. Fix admin comment author: ensure 'Musical Rhythms (Admin)' is used in both LivePage and AdminPage when isAdmin=true
-6. Fix screen recording: use `getDisplayMedia` with a canvas overlay approach — capture the entire app tab/window so comments are naturally included in the recording (simplest reliable approach)
+1. In LivePage.tsx:
+   a. Add a `liveStartTime` state that records `Date.now()` when `isLive` transitions from false to true (or when the user joins). 
+   b. Add a `liveElapsed` state that increments every second via setInterval while live and joined.
+   c. Render the timer as a red pill overlay at the top of the stream panel: "🔴 LIVE  MM:SS" or "HH:MM:SS".
+   d. Change admin comment avatar from 'S' text to MR logo `<img>` in a circle.
+   e. Change all occurrences of 'Musical Rhythms (Admin)' display name to 'Sohan Jagtap (Admin)'.
+2. In AdminPage.tsx:
+   a. Add live elapsed timer in the admin live preview section.
+   b. Change admin comment display name to 'Sohan Jagtap (Admin)'.
+   c. Fix recording: simplify handleStartRecording to use getDisplayMedia directly, pipe to MediaRecorder, on stop create blob URL and trigger download. Make error visible with alert/state. Keep the two-button UI (Start Recording / Stop & Download).

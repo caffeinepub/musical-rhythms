@@ -38,7 +38,6 @@ import {
   getLiveUrl,
   resetLiveHearts,
   setLiveUrl,
-  subscribeLiveComments,
   subscribeToStats,
 } from "../services/firebaseService";
 import type { Album, SocialProfile, Song } from "../types";
@@ -198,108 +197,60 @@ export function AdminPage({
   const formatTime = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
+  const [recordingError, setRecordingError] = useState("");
+
   const handleStartRecording = async () => {
+    setRecordingError("");
     try {
-      // Capture the full screen/tab including comments overlay
+      // Request screen capture (browser will show a picker to choose what to share)
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 30 } as MediaTrackConstraints,
+        video: true,
         audio: true,
       });
 
-      // Create canvas to composite screen + comments overlay
-      const canvas = document.createElement("canvas");
-      canvas.width = 1280;
-      canvas.height = 720;
-      const ctx = canvas.getContext("2d")!;
-
-      // Create a video element to display the screen stream
-      const screenVideo = document.createElement("video");
-      screenVideo.srcObject = screenStream;
-      screenVideo.muted = true;
-      await screenVideo.play();
-
-      let animFrameId: number;
-      const currentCommentsRef = {
-        value: [] as { authorName: string; text: string; isAdmin: boolean }[],
-      };
-
-      // Subscribe to comments to overlay them on canvas
-      const unsubComments = subscribeLiveComments((c) => {
-        currentCommentsRef.value = c.slice(-8);
-      });
-
-      const drawFrame = () => {
-        // Draw screen capture
-        ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
-
-        // Draw comments overlay at bottom-left (like YouTube Live)
-        const comments = currentCommentsRef.value;
-        if (comments.length > 0) {
-          const startY = canvas.height - 40 - comments.length * 36;
-          comments.forEach((comment, i) => {
-            const y = startY + i * 36;
-            // Semi-transparent background pill
-            ctx.save();
-            ctx.globalAlpha = 0.65;
-            ctx.fillStyle = "#000000";
-            ctx.beginPath();
-            (ctx as any).roundRect(16, y - 20, 500, 30, 8);
-            ctx.fill();
-            ctx.restore();
-            // Author name
-            ctx.fillStyle = comment.isAdmin ? "#ff9944" : "#8ecfff";
-            ctx.font = "bold 14px Arial";
-            ctx.fillText(
-              comment.isAdmin ? "Musical Rhythms (Admin)" : comment.authorName,
-              24,
-              y - 2,
-            );
-            // Comment text
-            const nameWidth = ctx.measureText(
-              comment.isAdmin ? "Musical Rhythms (Admin)" : comment.authorName,
-            ).width;
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "14px Arial";
-            ctx.fillText(`: ${comment.text}`, 24 + nameWidth, y - 2);
-          });
-        }
-
-        animFrameId = requestAnimationFrame(drawFrame);
-      };
-      drawFrame();
-
-      // Combine canvas stream with audio from screen
-      const canvasStream = canvas.captureStream(30);
-      const audioTracks = screenStream.getAudioTracks();
-      for (const t of audioTracks) canvasStream.addTrack(t);
-
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(canvasStream, {
-        mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-          ? "video/webm;codecs=vp9"
-          : "video/webm",
-      });
+      const mimeType = MediaRecorder.isTypeSupported(
+        "video/webm;codecs=vp9,opus",
+      )
+        ? "video/webm;codecs=vp9,opus"
+        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+          ? "video/webm;codecs=vp8,opus"
+          : MediaRecorder.isTypeSupported("video/webm")
+            ? "video/webm"
+            : "";
+
+      const recorder = new MediaRecorder(
+        screenStream,
+        mimeType ? { mimeType } : {},
+      );
+
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        if (e.data && e.data.size > 0) chunks.push(e.data);
       };
+
       recorder.onstop = () => {
-        cancelAnimationFrame(animFrameId);
-        unsubComments();
+        // Stop all tracks
         for (const t of screenStream.getTracks()) t.stop();
-        const blob = new Blob(chunks, { type: "video/webm" });
+        // Build blob and trigger download to Downloads folder
+        const blob = new Blob(chunks, {
+          type: recorder.mimeType || "video/webm",
+        });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = `live-recording-${Date.now()}.webm`;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
         setIsRecording(false);
         setRecordingTime(0);
         if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       };
 
+      // Request data every second so we always capture chunks
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
-      recorder.start();
       setIsRecording(true);
       setRecordingTime(0);
       recordingTimerRef.current = setInterval(
@@ -307,13 +258,21 @@ export function AdminPage({
         1000,
       );
 
-      // Stop when screen share ends
+      // Auto-stop when user dismisses the share picker or stops sharing
       screenStream.getVideoTracks()[0].onended = () => {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
         }
       };
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Don't show error if user simply cancelled the picker
+      if (
+        !msg.includes("Permission denied") &&
+        !msg.includes("NotAllowedError")
+      ) {
+        setRecordingError(`Recording failed: ${msg}`);
+      }
       setIsRecording(false);
     }
   };
@@ -1296,6 +1255,14 @@ export function AdminPage({
                   Record your screen while streaming and download the video to
                   your device.
                 </p>
+                {recordingError && (
+                  <div
+                    className="mb-3 px-3 py-2 rounded-lg text-xs text-red-400 border border-red-400/30"
+                    style={{ background: "oklch(0.40 0.15 25 / 0.15)" }}
+                  >
+                    {recordingError}
+                  </div>
+                )}
 
                 {isRecording ? (
                   <div className="space-y-3">
