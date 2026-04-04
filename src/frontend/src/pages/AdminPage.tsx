@@ -266,11 +266,20 @@ export function AdminPage({
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Don't show error if user simply cancelled the picker
+      // Permissions policy error — only happens inside the Caffeine preview iframe
       if (
-        !msg.includes("Permission denied") &&
-        !msg.includes("NotAllowedError")
+        msg.includes("disallowed by permissions policy") ||
+        msg.includes("display-capture")
       ) {
+        setRecordingError(
+          "Screen recording is blocked in the preview. Open your published website directly in Chrome (not inside the Caffeine builder preview), then use the recording button there.",
+        );
+      } else if (
+        !msg.includes("Permission denied") &&
+        !msg.includes("NotAllowedError") &&
+        !msg.includes("user-gesture")
+      ) {
+        // Only show unexpected errors — not when user cancelled the picker
         setRecordingError(`Recording failed: ${msg}`);
       }
       setIsRecording(false);

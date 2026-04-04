@@ -324,3 +324,61 @@ export async function resetLiveHearts(): Promise<void> {
     console.error("resetLiveHearts error:", err);
   }
 }
+
+// ── Live Viewers (presence) ───────────────────────────────────────────────────
+// Each viewer gets a unique session doc in "liveViewers" collection.
+// On unmount / page close we delete it so the count stays accurate.
+
+let _viewerDocId: string | null = null;
+
+export async function joinLiveViewers(): Promise<string> {
+  try {
+    const ref = await addDoc(collection(db, "liveViewers"), {
+      joinedAt: Date.now(),
+    });
+    _viewerDocId = ref.id;
+    return ref.id;
+  } catch (err) {
+    console.error("joinLiveViewers error:", err);
+    return "";
+  }
+}
+
+export async function leaveLiveViewers(id: string): Promise<void> {
+  if (!id) return;
+  try {
+    await deleteDoc(doc(db, "liveViewers", id));
+  } catch (err) {
+    console.error("leaveLiveViewers error:", err);
+  }
+}
+
+export function subscribeToLiveViewerCount(
+  callback: (count: number) => void,
+): () => void {
+  return onSnapshot(
+    collection(db, "liveViewers"),
+    (snap) => {
+      callback(snap.size);
+    },
+    (err) => {
+      console.error("Viewer count subscription error:", err);
+    },
+  );
+}
+
+// Attempt best-effort cleanup when the page unloads
+if (typeof window !== "undefined") {
+  const cleanup = () => {
+    if (_viewerDocId) {
+      // Use sendBeacon for reliability on page close
+      // Firebase deleteDoc won't work reliably on unload, so we use a flag
+      // and clean up stale docs (older than 2 min) server-side via a Firestore rule
+      // is not available here, so we do best-effort sync delete
+      deleteDoc(doc(db, "liveViewers", _viewerDocId)).catch(() => {});
+      _viewerDocId = null;
+    }
+  };
+  window.addEventListener("beforeunload", cleanup);
+  window.addEventListener("pagehide", cleanup);
+}

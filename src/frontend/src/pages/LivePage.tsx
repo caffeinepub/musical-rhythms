@@ -6,11 +6,14 @@ import {
   clearAllLiveComments,
   deleteLiveComment,
   incrementLiveHearts,
+  joinLiveViewers,
+  leaveLiveViewers,
   pinLiveComment,
   resetLiveHearts,
   subscribeLiveComments,
   subscribeLiveHearts,
   subscribeToLiveUrl,
+  subscribeToLiveViewerCount,
 } from "../services/firebaseService";
 import type { LiveComment } from "../services/firebaseService";
 
@@ -54,6 +57,12 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
   const [liveElapsed, setLiveElapsed] = useState(0);
   const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Live viewer count (admin only)
+  const [viewerCount, setViewerCount] = useState(0);
+
+  // Presence tracking — each page mount = one viewer session doc
+  const viewerDocIdRef = useRef<string>("");
+
   useEffect(() => {
     const unsub = subscribeToLiveUrl((url) => setLiveUrl(url));
     return unsub;
@@ -78,6 +87,25 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
       }
     });
     return unsub;
+  }, []);
+
+  // Subscribe to viewer count (used by admin display)
+  useEffect(() => {
+    const unsub = subscribeToLiveViewerCount((count) => setViewerCount(count));
+    return unsub;
+  }, []);
+
+  // Register this user as a viewer when they open the Live page
+  // Remove when they leave / close the tab
+  useEffect(() => {
+    let docId = "";
+    joinLiveViewers().then((id) => {
+      docId = id;
+      viewerDocIdRef.current = id;
+    });
+    return () => {
+      if (docId) leaveLiveViewers(docId);
+    };
   }, []);
 
   // Auto-clear comments and hearts when live ends
@@ -160,7 +188,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
     if (navigator.share) {
       navigator
         .share({
-          title: "Soham is Live! 🔴",
+          title: "Soham is Live! \uD83D\uDD34",
           text: "Join Soham Jagtap's live session on Musical Rhythms!",
           url: shareLink,
         })
@@ -288,6 +316,27 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
 
   return (
     <div className="px-4 sm:px-6 py-6 animate-fade-in">
+      {/* Admin-only: Viewer count badge */}
+      {isAdmin && isLive && (
+        <div
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl mb-4 text-sm font-semibold"
+          style={{
+            background: "oklch(0.52 0.20 250 / 0.15)",
+            border: "1px solid oklch(0.52 0.20 250 / 0.30)",
+            color: "oklch(0.75 0.16 250)",
+          }}
+        >
+          <span
+            className="w-2 h-2 rounded-full flex-shrink-0"
+            style={{ background: "oklch(0.65 0.20 250)" }}
+          />
+          <span>
+            <strong>{viewerCount}</strong>{" "}
+            {viewerCount === 1 ? "person" : "people"} currently in Live
+          </span>
+        </div>
+      )}
+
       {/* Live banner */}
       <div
         className="flex items-center gap-3 px-4 py-3 rounded-xl mb-6 text-sm font-semibold"
@@ -311,8 +360,8 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
           }}
         />
         {isLive
-          ? "LIVE NOW 🔴 — Tune in for the latest performance"
-          : "Currently Offline — Check back later for a live session"}
+          ? "LIVE NOW \uD83D\uDD34 \u2014 Tune in for the latest performance"
+          : "Currently Offline \u2014 Check back later for a live session"}
       </div>
 
       {/* Stream area */}
@@ -340,7 +389,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
               className="w-2 h-2 rounded-full animate-pulse"
               style={{ background: "white", flexShrink: 0 }}
             />
-            {"LIVE  "}
+            {"LIVE  "}
             {formatLiveTime(liveElapsed)}
           </div>
         )}
@@ -360,7 +409,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                 fontSize: "1.8rem",
               }}
             >
-              ❤️
+              \u2764\uFE0F
             </div>
           ))}
         </div>
@@ -376,7 +425,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                     className="w-16 h-16 rounded-full flex items-center justify-center"
                     style={{ background: "oklch(0.63 0.22 25 / 0.15)" }}
                   >
-                    <span className="text-2xl">🎵</span>
+                    <span className="text-2xl">\uD83C\uDFB5</span>
                   </div>
                   <div className="text-center">
                     <p className="text-foreground font-semibold text-sm mb-1">
@@ -407,7 +456,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
                     className="w-16 h-16 rounded-full flex items-center justify-center"
                     style={{ background: "oklch(var(--primary) / 0.10)" }}
                   >
-                    <span className="text-2xl">🎵</span>
+                    <span className="text-2xl">\uD83C\uDFB5</span>
                   </div>
                   <div className="text-center">
                     <p className="text-muted-foreground font-medium text-sm">
@@ -438,7 +487,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
         )}
       </div>
 
-      {/* Share + Heart row — only shown when live */}
+      {/* Share + Heart row \u2014 only shown when live */}
       {isLive && (
         <div className="mt-4 flex items-center gap-3 justify-center flex-wrap">
           <Button
@@ -455,7 +504,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
             data-ocid="live.share_button"
           >
             <Share2 size={14} />
-            {copied ? "Link Copied! ✓" : "Share Live"}
+            {copied ? "Link Copied! \u2713" : "Share Live"}
           </Button>
 
           <button
@@ -475,7 +524,7 @@ export function LivePage({ dataSaver, isAdmin = false }: LivePageProps) {
         </div>
       )}
 
-      {/* Comments section — only shown when live */}
+      {/* Comments section \u2014 only shown when live */}
       {isLive && (
         <div
           className="mt-6 rounded-2xl overflow-hidden"
