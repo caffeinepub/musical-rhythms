@@ -198,8 +198,15 @@ export function AdminPage({
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   const [recordingError, setRecordingError] = useState("");
+  const isInIframe = window.self !== window.top;
 
   const handleStartRecording = async () => {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setRecordingError(
+        "Screen recording is not supported in this browser or context. Use Chrome on your published website.",
+      );
+      return;
+    }
     setRecordingError("");
     try {
       // Request screen capture (browser will show a picker to choose what to share)
@@ -1264,64 +1271,80 @@ export function AdminPage({
                   Record your screen while streaming and download the video to
                   your device.
                 </p>
-                {recordingError && (
+                {isInIframe ? (
                   <div
-                    className="mb-3 px-3 py-2 rounded-lg text-xs text-red-400 border border-red-400/30"
-                    style={{ background: "oklch(0.40 0.15 25 / 0.15)" }}
+                    className="px-3 py-3 rounded-lg text-xs border"
+                    style={{
+                      background: "oklch(0.85 0.15 85 / 0.15)",
+                      borderColor: "oklch(0.75 0.15 85 / 0.4)",
+                      color: "oklch(0.80 0.12 85)",
+                    }}
                   >
-                    {recordingError}
-                  </div>
-                )}
-
-                {isRecording ? (
-                  <div className="space-y-3">
-                    <div
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl"
-                      style={{
-                        background: "oklch(0.63 0.22 25 / 0.12)",
-                        border: "1px solid oklch(0.63 0.22 25 / 0.25)",
-                      }}
-                    >
-                      <span
-                        className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{
-                          background: "oklch(0.63 0.22 25)",
-                          animation: "pulse 1s infinite",
-                        }}
-                      />
-                      <span
-                        className="text-sm font-semibold"
-                        style={{ color: "oklch(0.75 0.18 25)" }}
-                      >
-                        ● Recording... {formatTime(recordingTime)}
-                      </span>
-                    </div>
-                    <Button
-                      onClick={handleStopRecording}
-                      className="gap-2 w-full"
-                      style={{
-                        background: "oklch(0.52 0.22 25)",
-                        color: "white",
-                      }}
-                      data-ocid="admin.stop_recording.button"
-                    >
-                      <Square size={14} fill="white" />
-                      Stop & Download
-                    </Button>
+                    ⚠️ Recording only works on your published website. Open your
+                    published site in Chrome, go to Admin → Live, and use the
+                    recording button there.
                   </div>
                 ) : (
-                  <Button
-                    onClick={handleStartRecording}
-                    className="gap-2 w-full"
-                    style={{
-                      background: "var(--accent-color)",
-                      color: "white",
-                    }}
-                    data-ocid="admin.start_recording.button"
-                  >
-                    <Radio size={14} />
-                    Start Recording
-                  </Button>
+                  <>
+                    {recordingError && (
+                      <div
+                        className="mb-3 px-3 py-2 rounded-lg text-xs text-red-400 border border-red-400/30"
+                        style={{ background: "oklch(0.40 0.15 25 / 0.15)" }}
+                      >
+                        {recordingError}
+                      </div>
+                    )}
+                    {isRecording ? (
+                      <div className="space-y-3">
+                        <div
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                          style={{
+                            background: "oklch(0.63 0.22 25 / 0.12)",
+                            border: "1px solid oklch(0.63 0.22 25 / 0.25)",
+                          }}
+                        >
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{
+                              background: "oklch(0.63 0.22 25)",
+                              animation: "pulse 1s infinite",
+                            }}
+                          />
+                          <span
+                            className="text-sm font-semibold"
+                            style={{ color: "oklch(0.75 0.18 25)" }}
+                          >
+                            ● Recording... {formatTime(recordingTime)}
+                          </span>
+                        </div>
+                        <Button
+                          onClick={handleStopRecording}
+                          className="gap-2 w-full"
+                          style={{
+                            background: "oklch(0.52 0.22 25)",
+                            color: "white",
+                          }}
+                          data-ocid="admin.stop_recording.button"
+                        >
+                          <Square size={14} fill="white" />
+                          Stop & Download
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        onClick={handleStartRecording}
+                        className="gap-2 w-full"
+                        style={{
+                          background: "var(--accent-color)",
+                          color: "white",
+                        }}
+                        data-ocid="admin.start_recording.button"
+                      >
+                        <Radio size={14} />
+                        Start Recording
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             )}
